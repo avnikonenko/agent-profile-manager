@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-profile-manager"
+version = "0.1.0"
+description = "Manage multiple local Codex and Claude Code accounts."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE"]
+dependencies = ["cryptography>=41.0"]
+
+[project.urls]
+"Original source" = "https://github.com/hruskamiro/codex-tools"
+
+[project.scripts]
+agent-profile-manager = "agent_profile_manager.cli:main"
+apm = "agent_profile_manager.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agent_profile_manager*"]

@@ -1,0 +1,20 @@
+Agent Profile Manager
+
+This project is derived from Codex Tools by Miroslav Hruska:
+https://github.com/hruskamiro/codex-tools
+
+The Codex profile manager and encrypted profile-bundle implementation originate
+from that MIT-licensed project. Its original copyright and license are preserved
+in LICENSE:
+Copyright (c) 2026 Miroslav Hruska
+
+Claude profile support and account-management extensions were developed in the
+agent-tools derivative: https://github.com/avnikonenko/agent-tools
+This standalone extraction renames the Python package and command entry points
+and retains only profile-management functionality.
+
+Extraction source: agent-tools commit 28091c2, with the subsequent local
+README-only edits excluded. No credentials, account data, or history are bundled.
+
+This project is independent and is not affiliated with or endorsed by OpenAI,
+Anthropic, or the original author.
