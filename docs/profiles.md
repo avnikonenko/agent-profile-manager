@@ -1,39 +1,39 @@
 # Profile operations
 
-Use `apm codex COMMAND` or `apm claude COMMAND`. Each provider has its own
+Use `pm codex COMMAND` or `pm claude COMMAND`. Each provider has its own
 profiles. Only `default` is reserved. Existing default configuration and login
 are used in place.
 
 | Operation | Codex example | Claude example |
 | --- | --- | --- |
-| Create | `apm codex new work --isolated` | `apm claude new work` |
-| List | `apm codex list` | `apm claude list` |
-| Sign in again | `apm codex run work -- login` | `apm claude login work` |
-| Launch | `apm codex run work` | `apm claude run work` |
-| Resume | `apm codex run work -- resume` | `apm claude run work -- --resume` |
-| Rename | `apm codex rename work office` | `apm claude rename work office` |
-| Locate home | `apm codex path work` | `apm claude path work` |
-| Locate history | `apm codex path work --store` | `apm claude path work --store` |
-| Diagnose | `apm codex doctor work` | `apm claude doctor work` |
-| Install shortcut | `apm codex install work --wrapper codex-work` | `apm claude install work --wrapper claude-work` |
-| Remove shortcut | `apm codex uninstall work` | `apm claude uninstall work` |
-| Remove profile | `apm codex remove work` | `apm claude remove work` |
+| Create | `pm codex new work --isolated` | `pm claude new work` |
+| List | `pm codex list` | `pm claude list` |
+| Sign in again | `pm codex run work -- login` | `pm claude login work` |
+| Launch | `pm codex run work` | `pm claude run work` |
+| Resume | `pm codex run work -- resume` | `pm claude run work -- --resume` |
+| Rename | `pm codex rename work office` | `pm claude rename work office` |
+| Locate home | `pm codex path work` | `pm claude path work` |
+| Locate history | `pm codex path work --store` | `pm claude path work --store` |
+| Diagnose | `pm codex doctor work` | `pm claude doctor work` |
+| Install shortcut | `pm codex install work --wrapper codex-work` | `pm claude install work --wrapper claude-work` |
+| Remove shortcut | `pm codex uninstall work` | `pm claude uninstall work` |
+| Remove profile | `pm codex remove work` | `pm claude remove work` |
 
 Use provider-specific `--help` to see options. Global options precede the
 command; launch arguments follow `--`. For example:
 
 ```bash
-apm claude --manager-root /path/to/manager new work
-apm codex --default-home /path/to/existing/codex list
+pm claude --manager-root /path/to/manager new work
+pm codex --default-home /path/to/existing/codex list
 ```
 
 ## Sharing conversations
 
 Codex shares conversations with `default` unless `new` receives `--isolated`.
-To share with another profile, use `apm codex new team --share work`.
+To share with another profile, use `pm codex new team --share work`.
 
 Claude is isolated by default. Explicit sharing uses
-`apm claude new team --share work`. It links `projects/`, sharing sessions and
+`pm claude new team --share work`. It links `projects/`, sharing sessions and
 auto memory while keeping credentials and account configuration separate.
 The source projects directory must already exist.
 
@@ -45,11 +45,11 @@ with macOS Keychain identity.
 ## Encrypted account transfers
 
 ```bash
-apm codex export work --output work.codex-profile
-apm codex import work.codex-profile --name transferred --isolated
+pm codex export work --output work.codex-profile
+pm codex import work.codex-profile --name transferred --isolated
 
-apm claude export work --output work.claude-profile
-apm claude import work.claude-profile --name transferred
+pm claude export work --output work.claude-profile
+pm claude import work.claude-profile --name transferred
 ```
 
 Enter the passphrase when prompted. Exports contain file-backed credentials and

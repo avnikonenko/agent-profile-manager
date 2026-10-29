@@ -15,10 +15,10 @@ Code separately. From this project's directory:
 
 ```bash
 pipx install .
-apm --help
+pm --help
 ```
 
-`agent-profile-manager` is the full command name; `apm` is its short form.
+`agent-profile-manager` is the full command name; `pm` is its short form.
 From a source checkout, use `./agent-profile-manager` after installing the
 dependency, or run `python3 -m agent_profile_manager`.
 
@@ -28,20 +28,20 @@ Keep your original `default` account and add two more with private histories:
 
 ```bash
 # Create profiles
-apm codex new work --isolated
-apm codex new research --isolated
+pm codex new work --isolated
+pm codex new research --isolated
 
 # Sign in to the intended account for each profile
-apm codex run work -- login
-apm codex run research -- login
+pm codex run work -- login
+pm codex run research -- login
 
 # Launch one account
-apm codex run default
-apm codex run work
-apm codex run research
+pm codex run default
+pm codex run work
+pm codex run research
 ```
 
-Run `apm codex list` to see profiles. Repeat `run NAME -- login` to sign in again.
+Run `pm codex list` to see profiles. Repeat `run NAME -- login` to sign in again.
 Omitting `--isolated` shares conversations with `default`, matching the original
 Codex profile manager's behavior.
 
@@ -50,25 +50,25 @@ Codex profile manager's behavior.
 Claude profiles are independent of Codex profiles, so you can reuse names:
 
 ```bash
-apm claude new work
-apm claude new research
+pm claude new work
+pm claude new research
 
-apm claude login work
-apm claude login research
+pm claude login work
+pm claude login research
 
-apm claude run default
-apm claude run work
-apm claude run research
+pm claude run default
+pm claude run work
+pm claude run research
 ```
 
-Run `apm claude list` to see profiles. Repeat `login NAME` to sign in again.
+Run `pm claude list` to see profiles. Repeat `login NAME` to sign in again.
 Claude histories are private by default.
 
 ## Shortcuts
 
 ```bash
-apm codex install work --wrapper codex-work
-apm claude install work --wrapper claude-work
+pm codex install work --wrapper codex-work
+pm claude install work --wrapper claude-work
 
 codex-work
 claude-work

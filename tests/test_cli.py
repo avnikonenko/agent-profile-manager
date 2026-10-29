@@ -13,7 +13,7 @@ class CliTests(unittest.TestCase):
         for provider, module in (("codex", manager), ("claude", claude)):
             with self.subTest(provider=provider), patch.object(module, "main", return_value=7) as call:
                 self.assertEqual(cli.main([provider, "run", "work", "--", "literal argument"]), 7)
-            call.assert_called_once_with(["run", "work", "--", "literal argument"], prog=f"apm {provider}")
+            call.assert_called_once_with(["run", "work", "--", "literal argument"], prog=f"pm {provider}")
 
     def test_no_unrelated_tools_or_implicit_default_provider(self) -> None:
         with redirect_stderr(io.StringIO()):

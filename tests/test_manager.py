@@ -68,12 +68,12 @@ class ManagerCommandTests(unittest.TestCase):
 
     def test_unified_manager_help_uses_the_unified_command_name(self) -> None:
         with patch("sys.stdout", new_callable=StringIO) as stdout:
-            parser = manager.build_parser("apm codex")
+            parser = manager.build_parser("pm codex")
             with self.assertRaises(SystemExit) as raised:
                 parser.parse_args(["--help"])
 
         self.assertEqual(raised.exception.code, 0)
-        self.assertIn("usage: apm codex", stdout.getvalue())
+        self.assertIn("usage: pm codex", stdout.getvalue())
 
     def test_command_name_must_be_a_plain_filename(self) -> None:
         parser = manager.build_parser()

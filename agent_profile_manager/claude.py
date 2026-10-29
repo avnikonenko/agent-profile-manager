@@ -113,10 +113,10 @@ def validate_managed_projects(root: Path, name: str, default: Path) -> None:
     store = claude_profiles.store_from_profile(profile)
     projects = home / "projects"
     if not home.is_dir() or not store.is_dir() or not projects.is_symlink() or projects.resolve() != store:
-        raise ValueError("Managed projects layout is missing or changed; inspect 'apm claude doctor NAME' and 'apm claude repair NAME'.")
+        raise ValueError("Managed projects layout is missing or changed; inspect 'pm claude doctor NAME' and 'pm claude repair NAME'.")
 
 
-def build_parser(prog: str = "apm claude") -> argparse.ArgumentParser:
+def build_parser(prog: str = "pm claude") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=prog, description=__doc__, allow_abbrev=False)
     parser.add_argument("--manager-root", type=Path, help="Managed profiles root (default: ~/.claude-manager).")
     parser.add_argument("--default-home", type=Path, help="Existing default Claude configuration directory.")
@@ -199,7 +199,7 @@ def command_login(args: argparse.Namespace) -> int:
     if profile_collisions(profiles):
         raise ValueError("Profile directories collide; refusing to authenticate into an ambiguous account.")
     if args.profile not in profiles:
-        raise ValueError(f"Unknown Claude profile: {args.profile}. Create it with 'apm claude new NAME'.")
+        raise ValueError(f"Unknown Claude profile: {args.profile}. Create it with 'pm claude new NAME'.")
     conflicts = authentication_conflicts(os.environ)
     if conflicts:
         raise ValueError(
@@ -240,7 +240,7 @@ def _command_import(args: argparse.Namespace) -> int:
     return claude_bundle.command_import(args)
 
 
-def main(argv: list[str] | None = None, *, prog: str = "apm claude") -> int:
+def main(argv: list[str] | None = None, *, prog: str = "pm claude") -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     forwarded: list[str] = []
     has_separator = "--" in arguments
@@ -283,7 +283,7 @@ def main(argv: list[str] | None = None, *, prog: str = "apm claude") -> int:
         if collisions:
             raise ValueError("Profile directories collide: " + "; ".join(collisions))
         if args.profile not in profiles:
-            raise ValueError(f"Unknown Claude profile: {args.profile}. Create it with 'apm claude new NAME'.")
+            raise ValueError(f"Unknown Claude profile: {args.profile}. Create it with 'pm claude new NAME'.")
         conflicts = authentication_conflicts(os.environ)
         if conflicts:
             raise ValueError(

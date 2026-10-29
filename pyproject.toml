@@ -17,7 +17,7 @@ dependencies = ["cryptography>=41.0"]
 
 [project.scripts]
 agent-profile-manager = "agent_profile_manager.cli:main"
-apm = "agent_profile_manager.cli:main"
+pm = "agent_profile_manager.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["agent_profile_manager*"]

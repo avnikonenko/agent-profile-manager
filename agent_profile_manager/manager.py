@@ -829,7 +829,7 @@ def command_new(args: argparse.Namespace) -> int:
         print("Conversations: isolated")
     if seeded:
         print(f"Seeded state: {', '.join(seeded)}")
-    print(f"Run: apm codex run {name}")
+    print(f"Run: pm codex run {name}")
     return 0
 
 
@@ -1239,7 +1239,7 @@ def command_remove(args: argparse.Namespace) -> int:
     return 0
 
 
-def build_parser(prog: str = "apm codex") -> argparse.ArgumentParser:
+def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description="Manage isolated Codex profiles with shared conversation stores.",
@@ -1409,7 +1409,7 @@ def normalize_remainder(args: argparse.Namespace) -> None:
         args.codex_args = args.codex_args[1:]
 
 
-def main(argv: list[str] | None = None, *, prog: str = "apm codex") -> int:
+def main(argv: list[str] | None = None, *, prog: str = "pm codex") -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     # Stop at the command so provider-like arguments passed to Codex stay literal.
     router = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
