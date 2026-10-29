@@ -87,7 +87,7 @@ class ManagerCommandTests(unittest.TestCase):
                 ["uninstall", "work", "--command-name", "/tmp/outside"]
             )
 
-    def test_isolated_profile_data_is_private(self) -> None:
+    def test_new_profile_is_private_without_flags(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             manager_root = root / "manager"
@@ -102,7 +102,6 @@ class ManagerCommandTests(unittest.TestCase):
                     str(default_home),
                     "new",
                     "private",
-                    "--isolated",
                 ]
             )
 
@@ -117,6 +116,26 @@ class ManagerCommandTests(unittest.TestCase):
                 (store / "session_index.jsonl").stat().st_mode & 0o777,
                 0o600,
             )
+
+    def test_sharing_requires_explicit_option_and_conflicting_flags_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            managed, default = root / "manager", root / "default"
+            default.mkdir()
+            common = ["--manager-root", str(managed), "--default-home", str(default)]
+            with patch("sys.stdout", new_callable=StringIO):
+                self.assertEqual(manager.main([*common, "new", "private"]), 0)
+                self.assertEqual(list(default.iterdir()), [])
+                self.assertEqual(manager.main([*common, "new", "shared", "--share", "default"]), 0)
+            private = manager.load_profile(managed, "private", default)
+            shared = manager.load_profile(managed, "shared", default)
+            self.assertEqual(private["share"], "isolated")
+            self.assertEqual(shared["share"], "default")
+            self.assertEqual(Path(shared["conversation_store"]), default)
+            self.assertNotEqual(private["conversation_store"], shared["conversation_store"])
+            with patch("sys.stderr", new_callable=StringIO), self.assertRaises(SystemExit):
+                manager.main([*common, "new", "bad", "--isolated", "--share", "default"])
+            self.assertFalse(manager.profile_dir(managed, "bad").exists())
 
     def test_export_import_renames_profile_and_shares_default(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -378,10 +397,10 @@ class ManagerCommandTests(unittest.TestCase):
             )
             source_home = source_manager / "profiles" / "work" / "home"
             (source_home / "auth.json").write_text("{}\n", encoding="utf-8")
-            session = source_default / "sessions" / "2026" / "example.jsonl"
+            session = source_home / "sessions" / "2026" / "example.jsonl"
             session.parent.mkdir(parents=True)
             session.write_text('{"message":"portable"}\n', encoding="utf-8")
-            shell_snapshot = source_default / "shell_snapshots" / "machine.sh"
+            shell_snapshot = source_home / "shell_snapshots" / "machine.sh"
             shell_snapshot.write_text("machine-only\n", encoding="utf-8")
 
             bundle = root / "work.codex-profile"

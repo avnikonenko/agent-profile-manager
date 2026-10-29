@@ -149,6 +149,7 @@ def build_parser(prog: str = "pm claude") -> argparse.ArgumentParser:
     named(new)
     sharing = new.add_mutually_exclusive_group()
     sharing.add_argument("--share", type=claude_profiles.valid_name, help="Share project history and memory with PROFILE.")
+    sharing.add_argument("--share-history", dest="share", action="store_const", const="default", help="Share default profile project history and memory (same as --share default).")
     sharing.add_argument("--isolated", action="store_true", help="Keep project history private (the default).")
     new.add_argument("--force", action="store_true")
     rename = command("rename", "Rename a managed account without moving its login directory.", claude_profiles.command_rename)

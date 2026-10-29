@@ -13,7 +13,7 @@ def main(argv: list[str] | None = None) -> int:
 Manage multiple Codex and Claude Code accounts.
 
 Examples:
-  pm codex new work --isolated
+  pm codex new work
   pm codex run work -- login
   pm codex run work
   pm claude new work

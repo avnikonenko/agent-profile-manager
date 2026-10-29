@@ -28,8 +28,8 @@ Keep your original `default` account and add two more with private histories:
 
 ```bash
 # Create profiles
-pm codex new work --isolated
-pm codex new research --isolated
+pm codex new work
+pm codex new research
 
 # Sign in to the intended account for each profile
 pm codex run work -- login
@@ -42,8 +42,8 @@ pm codex run research
 ```
 
 Run `pm codex list` to see profiles. Repeat `run NAME -- login` to sign in again.
-Omitting `--isolated` shares conversations with `default`, matching the original
-Codex profile manager's behavior.
+New profiles have private conversation histories by default for both providers.
+To share history, use an explicit `--share PROFILE` when creating a profile.
 
 ## Three Claude accounts
 
@@ -63,6 +63,21 @@ pm claude run research
 
 Run `pm claude list` to see profiles. Repeat `login NAME` to sign in again.
 Claude histories are private by default.
+
+## Share history across accounts
+
+New profiles have private history. To see the original account's conversations
+from another account, create the profile with `--share-history`:
+
+```bash
+pm codex new shared-work --share-history
+pm claude new shared-work --share-history
+```
+
+This is shorthand for `--share default`. Use `--share work` to share another
+profile instead. Logins stay separate; Claude sharing also includes auto memory.
+Claude's source `projects/` directory must already exist. This option applies
+when creating profiles; it does not merge existing histories.
 
 ## Shortcuts
 

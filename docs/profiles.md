@@ -6,7 +6,7 @@ are used in place.
 
 | Operation | Codex example | Claude example |
 | --- | --- | --- |
-| Create | `pm codex new work --isolated` | `pm claude new work` |
+| Create | `pm codex new work` | `pm claude new work` |
 | List | `pm codex list` | `pm claude list` |
 | Sign in again | `pm codex run work -- login` | `pm claude login work` |
 | Launch | `pm codex run work` | `pm claude run work` |
@@ -29,13 +29,23 @@ pm codex --default-home /path/to/existing/codex list
 
 ## Sharing conversations
 
-Codex shares conversations with `default` unless `new` receives `--isolated`.
-To share with another profile, use `pm codex new team --share work`.
+Both providers' `new` commands create profiles with private histories by default. The optional
+`--isolated` flag remains accepted for compatibility. Existing profiles retain
+their sharing configuration. `new NAME --share-history` shares with `default`
+for either provider; it is an alias for `--share default`. Use `--share PROFILE`
+to choose a different source. The sharing flags and `--isolated` are mutually
+exclusive. This option creates a shared profile and does not migrate or merge
+existing histories.
 
-Claude is isolated by default. Explicit sharing uses
+To share Codex history, explicitly use
+`pm codex new team --share work` (or `--share default`).
+
+Explicit Claude sharing uses
 `pm claude new team --share work`. It links `projects/`, sharing sessions and
 auto memory while keeping credentials and account configuration separate.
-The source projects directory must already exist.
+The source projects directory must already exist. Stop work on a conversation
+before resuming it under another account: sharing history does not release a
+running conversation's writer lock or move a running session.
 
 `repair NAME` repairs missing derived Codex state or a missing managed Claude
 projects link. It is provider-specific; it is not a general credential repair.
@@ -51,6 +61,10 @@ pm codex import work.codex-profile --name transferred --isolated
 pm claude export work --output work.claude-profile
 pm claude import work.claude-profile --name transferred
 ```
+
+For Codex imports, keep `--isolated` as shown to select a private destination;
+omitting it retains the original import behavior of sharing with `default`.
+Claude imports are always private for new profiles.
 
 Enter the passphrase when prompted. Exports contain file-backed credentials and
 profile configuration. Add `--include-conversations` to export history too.
