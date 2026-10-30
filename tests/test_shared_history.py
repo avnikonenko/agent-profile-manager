@@ -12,7 +12,7 @@ from agent_profile_manager import claude, claude_profiles, cli, manager
 
 
 class SharedHistoryTests(unittest.TestCase):
-    def test_share_history_links_default_without_copying_login(self) -> None:
+    def test_shared_default_and_share_history_alias_do_not_copy_login(self) -> None:
         for provider in ('codex', 'claude'):
             with self.subTest(provider=provider), ExitStack() as stack:
                 base = Path(stack.enter_context(tempfile.TemporaryDirectory()))
@@ -30,7 +30,7 @@ class SharedHistoryTests(unittest.TestCase):
                 for name in ('work', 'research'):
                     self.assertEqual(cli.main([
                         provider, '--manager-root', str(root), '--default-home', str(default),
-                        'new', name, '--share-history',
+                        'new', name, *([] if name == 'work' else ['--share-history']),
                     ]), 0)
                     backend = manager if provider == 'codex' else claude_profiles
                     profile = backend.load_profile(root, name, default)
@@ -43,6 +43,36 @@ class SharedHistoryTests(unittest.TestCase):
                 self.assertEqual((homes[1] / history_dir / 'example.jsonl').read_text(), 'shared update\n')
                 self.assertEqual((default / credential).read_text(), 'dummy-login-not-for-copying')
 
+    def test_isolated_profiles_stay_private_when_reused(self) -> None:
+        for provider in ('codex', 'claude'):
+            with self.subTest(provider=provider), tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+                base = Path(tmp)
+                root, default = base / 'manager', base / 'unused-default'
+                common = [provider, '--manager-root', str(root), '--default-home', str(default)]
+                self.assertEqual(cli.main([*common, 'new', 'work', '--isolated']), 0)
+                backend = manager if provider == 'codex' else claude_profiles
+                original = backend.load_profile(root, 'work', default)
+                self.assertEqual(original['share'], 'isolated')
+                self.assertFalse(default.exists())
+                self.assertEqual(cli.main([*common, 'new', 'work', '--force']), 0)
+                after = backend.load_profile(root, 'work', default)
+                self.assertEqual(after['share'], 'isolated')
+                self.assertEqual(after['conversation_store'], original['conversation_store'])
+                self.assertFalse(default.exists())
+
+    def test_default_store_is_initialized_without_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            base = Path(tmp)
+            root, default = base / 'manager', base / 'default'
+            self.assertEqual(claude.main([
+                '--manager-root', str(root), '--default-home', str(default), 'new', 'work',
+            ]), 0)
+            self.assertTrue((default / 'projects').is_dir())
+            self.assertEqual((default / 'projects').stat().st_mode & 0o777, 0o700)
+            self.assertFalse((default / '.credentials.json').exists())
+            profile = claude_profiles.load_profile(root, 'work', default)
+            self.assertEqual((Path(profile['home']) / 'projects').resolve(), default / 'projects')
+
     def test_sharing_options_cannot_be_combined(self) -> None:
         for provider, backend in (('codex', manager), ('claude', claude)):
             for extra in (['--isolated'], ['--share', 'work']):
@@ -52,7 +82,7 @@ class SharedHistoryTests(unittest.TestCase):
                         parser.parse_args(['new', 'research', '--share-history', *extra])
                     self.assertEqual(raised.exception.code, 2)
 
-    def test_private_default_and_explicit_share_remain_available(self) -> None:
+    def test_explicit_sharing_options_remain_available(self) -> None:
         for backend in (manager, claude):
             parser = backend.build_parser()
             self.assertIsNone(parser.parse_args(['new', 'work']).share)

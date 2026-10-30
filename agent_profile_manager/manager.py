@@ -783,6 +783,12 @@ def command_new(args: argparse.Namespace) -> int:
     share = args.share
     if args.isolated:
         share = None
+    elif share is None:
+        if target_profile_dir.exists() and args.force:
+            existing_share = load_profile(root, name, default)["share"]
+            share = None if existing_share == "isolated" else existing_share
+        else:
+            share = "default"
 
     home = profile_home(root, name)
     if home.exists() and any(home.iterdir()) and not args.force:
@@ -1240,7 +1246,7 @@ def command_remove(args: argparse.Namespace) -> int:
 def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Manage Codex profiles with private history and optional sharing.",
+        description="Manage Codex profiles with shared history and optional isolation.",
     )
     parser.add_argument(
         "--provider", choices=("codex", "claude"), default="codex",
@@ -1267,7 +1273,7 @@ def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
         "--share",
         metavar="PROFILE",
         type=valid_name,
-        help="Share conversations with this profile. Default: private history.",
+        help="Share conversations with this profile. Default: default.",
     )
     sharing.add_argument(
         "--share-history", dest="share", action="store_const", const="default",
@@ -1276,7 +1282,7 @@ def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
     sharing.add_argument(
         "--isolated",
         action="store_true",
-        help="Create a private conversation store (the default; retained for compatibility).",
+        help="Keep conversation history private instead of sharing with default.",
     )
     new.add_argument("--force", action="store_true", help="Allow reuse of existing dirs.")
     new.set_defaults(func=command_new)

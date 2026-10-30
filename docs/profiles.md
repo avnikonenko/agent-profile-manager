@@ -29,23 +29,27 @@ pm codex --default-home /path/to/existing/codex list
 
 ## Sharing conversations
 
-Both providers' `new` commands create profiles with private histories by default. The optional
-`--isolated` flag remains accepted for compatibility. Existing profiles retain
-their sharing configuration. `new NAME --share-history` shares with `default`
-for either provider; it is an alias for `--share default`. Use `--share PROFILE`
-to choose a different source. The sharing flags and `--isolated` are mutually
-exclusive. This option creates a shared profile and does not migrate or merge
-existing histories.
+Both providers' `new` commands share history with `default` unless you supply
+`--isolated`. Existing profiles retain their configuration, including when
+reused with `new NAME --force` without sharing options.
 
-To share Codex history, explicitly use
-`pm codex new team --share work` (or `--share default`).
+```bash
+pm codex new work                     # Share default history
+pm claude new work                    # Share default projects and memory
+pm codex new private-work --isolated
+pm claude new private-work --isolated
+```
 
-Explicit Claude sharing uses
-`pm claude new team --share work`. It links `projects/`, sharing sessions and
-auto memory while keeping credentials and account configuration separate.
-The source projects directory must already exist. Stop work on a conversation
-before resuming it under another account: sharing history does not release a
-running conversation's writer lock or move a running session.
+`--share-history` remains an alias for `--share default`. Use `--share PROFILE`
+to choose a different source. Sharing flags and `--isolated` are mutually
+exclusive. These options do not migrate or merge existing histories.
+
+Codex shares its conversation-store paths. Claude links `projects/`, sharing
+sessions and auto memory while keeping credentials and account configuration
+separate. If the default Claude projects directory is missing, creation makes
+an empty one privately. A different source profile must have an existing store.
+Stop work on a conversation before resuming it under another account: sharing
+does not release writer locks or move a running session.
 
 `repair NAME` repairs missing derived Codex state or a missing managed Claude
 projects link. It is provider-specific; it is not a general credential repair.

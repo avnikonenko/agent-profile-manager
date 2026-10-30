@@ -179,6 +179,11 @@ def create_profile(root: Path, name: str, default: Path, share: str | None = Non
             return existing
         raise ValueError(f"Profile already exists: {name}")
     source = load_profile(root, share, default) if share else None
+    if source and share == "default":
+        projects = home_from_profile(source) / "projects"
+        if not projects.exists() and not projects.is_symlink():
+            _private_dir(home_from_profile(source))
+            _private_dir(projects)
     for directory in (root, root / "profiles", root / "homes", root / "stores"):
         _private_dir(directory)
     identifier = str(uuid.uuid4())
@@ -188,7 +193,7 @@ def create_profile(root: Path, name: str, default: Path, share: str | None = Non
     created_store = False
     try:
         if source:
-            # Sharing is explicit; existing stores remain untouched.
+            # Existing shared stores remain untouched.
             if not store.is_dir():
                 raise ValueError("Shared projects directory does not exist")
         else:
@@ -234,8 +239,15 @@ def command_new(args: argparse.Namespace) -> int:
     if reused and getattr(args, "force", False) and getattr(args, "isolated", False):
         if load_profile(root, args.name, default)["share"] != "isolated":
             raise ValueError("--force cannot change an existing profile's sharing")
-    profile = create_profile(root, args.name, default, getattr(args, "share", None), getattr(args, "force", False))
+    share = getattr(args, "share", None)
+    if getattr(args, "isolated", False):
+        share = None
+    elif share is None and not reused:
+        share = "default"
+    profile = create_profile(root, args.name, default, share, getattr(args, "force", False))
     print(f"{'Reusing' if reused else 'Created'} Claude profile {profile['name']}: {profile['home']}")
+    print("History: isolated" if profile["share"] == "isolated"
+          else f"History and memory: shared with {profile['share']}")
     if getattr(args, "install", False):
         return command_install(args)
     return 0

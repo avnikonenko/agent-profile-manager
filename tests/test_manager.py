@@ -87,7 +87,7 @@ class ManagerCommandTests(unittest.TestCase):
                 ["uninstall", "work", "--command-name", "/tmp/outside"]
             )
 
-    def test_new_profile_is_private_without_flags(self) -> None:
+    def test_isolated_profile_data_is_private(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             manager_root = root / "manager"
@@ -102,6 +102,7 @@ class ManagerCommandTests(unittest.TestCase):
                     str(default_home),
                     "new",
                     "private",
+                    "--isolated",
                 ]
             )
 
@@ -117,16 +118,16 @@ class ManagerCommandTests(unittest.TestCase):
                 0o600,
             )
 
-    def test_sharing_requires_explicit_option_and_conflicting_flags_are_rejected(self) -> None:
+    def test_isolation_requires_explicit_option_and_conflicting_flags_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             managed, default = root / "manager", root / "default"
             default.mkdir()
             common = ["--manager-root", str(managed), "--default-home", str(default)]
             with patch("sys.stdout", new_callable=StringIO):
-                self.assertEqual(manager.main([*common, "new", "private"]), 0)
+                self.assertEqual(manager.main([*common, "new", "private", "--isolated"]), 0)
                 self.assertEqual(list(default.iterdir()), [])
-                self.assertEqual(manager.main([*common, "new", "shared", "--share", "default"]), 0)
+                self.assertEqual(manager.main([*common, "new", "shared"]), 0)
             private = manager.load_profile(managed, "private", default)
             shared = manager.load_profile(managed, "shared", default)
             self.assertEqual(private["share"], "isolated")

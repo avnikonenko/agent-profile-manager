@@ -24,7 +24,7 @@ dependency, or run `python3 -m agent_profile_manager`.
 
 ## Three Codex accounts
 
-Keep your original `default` account and add two more with private histories:
+Keep your original `default` account and add two more that share its conversation history:
 
 ```bash
 # Create profiles
@@ -42,8 +42,8 @@ pm codex run research
 ```
 
 Run `pm codex list` to see profiles. Repeat `run NAME -- login` to sign in again.
-New profiles have private conversation histories by default for both providers.
-To share history, use an explicit `--share PROFILE` when creating a profile.
+New profiles share history with `default` for both providers. Use `--isolated`
+when creating a profile to keep its history private.
 
 ## Three Claude accounts
 
@@ -62,22 +62,23 @@ pm claude run research
 ```
 
 Run `pm claude list` to see profiles. Repeat `login NAME` to sign in again.
-Claude histories are private by default.
+New Claude profiles share project history and auto memory with `default`.
 
-## Share history across accounts
+## Shared or private history
 
-New profiles have private history. To see the original account's conversations
-from another account, create the profile with `--share-history`:
+History is shared with `default` unless you request isolation:
 
 ```bash
-pm codex new shared-work --share-history
-pm claude new shared-work --share-history
+pm codex new work                     # Shared history (default)
+pm claude new work                    # Shared history and auto memory (default)
+pm codex new private-work --isolated  # Private history
+pm claude new private-work --isolated # Private history and memory
 ```
 
-This is shorthand for `--share default`. Use `--share work` to share another
-profile instead. Logins stay separate; Claude sharing also includes auto memory.
-Claude's source `projects/` directory must already exist. This option applies
-when creating profiles; it does not merge existing histories.
+Use `--share work` to share another profile instead. `--share-history` remains
+an optional shorthand for `--share default`. Logins stay separate in every mode.
+These options apply when creating profiles; existing histories are not merged
+or moved.
 
 ## Shortcuts
 
