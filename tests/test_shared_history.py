@@ -12,7 +12,7 @@ from agent_profile_manager import claude, claude_profiles, cli, manager
 
 
 class SharedHistoryTests(unittest.TestCase):
-    def test_shared_default_and_share_history_alias_do_not_copy_login(self) -> None:
+    def test_shared_default_and_explicit_share_do_not_copy_login(self) -> None:
         for provider in ('codex', 'claude'):
             with self.subTest(provider=provider), ExitStack() as stack:
                 base = Path(stack.enter_context(tempfile.TemporaryDirectory()))
@@ -30,7 +30,7 @@ class SharedHistoryTests(unittest.TestCase):
                 for name in ('work', 'research'):
                     self.assertEqual(cli.main([
                         provider, '--manager-root', str(root), '--default-home', str(default),
-                        'new', name, *([] if name == 'work' else ['--share-history']),
+                        'new', name, *([] if name == 'work' else ['--share', 'default']),
                     ]), 0)
                     backend = manager if provider == 'codex' else claude_profiles
                     profile = backend.load_profile(root, name, default)
@@ -73,13 +73,13 @@ class SharedHistoryTests(unittest.TestCase):
             profile = claude_profiles.load_profile(root, 'work', default)
             self.assertEqual((Path(profile['home']) / 'projects').resolve(), default / 'projects')
 
-    def test_sharing_options_cannot_be_combined(self) -> None:
+    def test_conflicting_or_removed_sharing_options_are_rejected(self) -> None:
         for provider, backend in (('codex', manager), ('claude', claude)):
-            for extra in (['--isolated'], ['--share', 'work']):
-                with self.subTest(provider=provider, extra=extra), redirect_stderr(io.StringIO()):
+            for options in (['--share', 'work', '--isolated'], ['--share-history']):
+                with self.subTest(provider=provider, options=options), redirect_stderr(io.StringIO()):
                     parser = backend.build_parser()
                     with self.assertRaises(SystemExit) as raised:
-                        parser.parse_args(['new', 'research', '--share-history', *extra])
+                        parser.parse_args(['new', 'research', *options])
                     self.assertEqual(raised.exception.code, 2)
 
     def test_explicit_sharing_options_remain_available(self) -> None:
@@ -87,7 +87,7 @@ class SharedHistoryTests(unittest.TestCase):
             parser = backend.build_parser()
             self.assertIsNone(parser.parse_args(['new', 'work']).share)
             self.assertEqual(parser.parse_args(['new', 'work', '--share', 'research']).share, 'research')
-            self.assertEqual(parser.parse_args(['new', 'work', '--share-history']).share, 'default')
+            self.assertEqual(parser.parse_args(['new', 'work', '--share', 'default']).share, 'default')
 
 
 if __name__ == '__main__':

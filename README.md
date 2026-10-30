@@ -75,9 +75,8 @@ pm codex new private-work --isolated  # Private history
 pm claude new private-work --isolated # Private history and memory
 ```
 
-Use `--share work` to share another profile instead. `--share-history` remains
-an optional shorthand for `--share default`. Logins stay separate in every mode.
-These options apply when creating profiles; existing histories are not merged
+Use `--share work` to share another profile instead. Logins stay separate in
+every mode. These options apply when creating profiles; existing histories are not merged
 or moved.
 
 ## Shortcuts

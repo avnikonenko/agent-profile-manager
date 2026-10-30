@@ -1276,10 +1276,6 @@ def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
         help="Share conversations with this profile. Default: default.",
     )
     sharing.add_argument(
-        "--share-history", dest="share", action="store_const", const="default",
-        help="Share conversation history with the default profile (same as --share default).",
-    )
-    sharing.add_argument(
         "--isolated",
         action="store_true",
         help="Keep conversation history private instead of sharing with default.",

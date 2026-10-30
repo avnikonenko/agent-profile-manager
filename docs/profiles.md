@@ -40,9 +40,8 @@ pm codex new private-work --isolated
 pm claude new private-work --isolated
 ```
 
-`--share-history` remains an alias for `--share default`. Use `--share PROFILE`
-to choose a different source. Sharing flags and `--isolated` are mutually
-exclusive. These options do not migrate or merge existing histories.
+Use `--share PROFILE` to choose a different source. `--share` and `--isolated`
+are mutually exclusive. These options do not migrate or merge existing histories.
 
 Codex shares its conversation-store paths. Claude links `projects/`, sharing
 sessions and auto memory while keeping credentials and account configuration
