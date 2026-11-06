@@ -791,6 +791,13 @@ def command_new(args: argparse.Namespace) -> int:
         else:
             share = "default"
 
+    if share is None:
+        store = (
+            store_from_profile(existing_profile)
+            if existing_profile is not None and existing_profile.get("share") == "isolated"
+            else store_dir(root, name)
+        )
+
     home = profile_home(root, name)
     if home.exists() and any(home.iterdir()) and not args.force:
         print(f"error: profile home is not empty: {home}", file=sys.stderr)
@@ -807,7 +814,6 @@ def command_new(args: argparse.Namespace) -> int:
         else:
             ensure_store(store)
     else:
-        store = store_dir(root, name)
         source_home = None
         ensure_store(store)
 

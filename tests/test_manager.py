@@ -12,6 +12,26 @@ from agent_profile_manager import manager
 
 
 class ManagerCommandTests(unittest.TestCase):
+    def test_new_force_preserves_isolated_store_after_rename(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            managed, default = root / "manager", root / "default"
+            default.mkdir()
+            common = ["--manager-root", str(managed), "--default-home", str(default)]
+            with patch("sys.stdout", new_callable=StringIO):
+                self.assertEqual(manager.main([*common, "new", "old", "--isolated"]), 0)
+                original = manager.load_profile(managed, "old", default)
+                store = Path(original["conversation_store"])
+                marker = store / "sessions" / "marker.jsonl"
+                marker.write_text("dummy history\n", encoding="utf-8")
+                self.assertEqual(manager.main([*common, "rename", "old", "renamed"]), 0)
+                self.assertEqual(manager.main([*common, "new", "renamed", "--force"]), 0)
+            renamed = manager.load_profile(managed, "renamed", default)
+            self.assertEqual(renamed["conversation_store"], str(store))
+            self.assertEqual((Path(renamed["home"]) / "sessions").resolve(), store / "sessions")
+            self.assertFalse((managed / "stores" / "renamed-conversations").exists())
+            self.assertEqual(marker.read_text(encoding="utf-8"), "dummy history\n")
+
     def test_new_force_creates_a_missing_profile(self) -> None:
         for sharing in ([], ["--isolated"], ["--share", "default"]):
             with self.subTest(sharing=sharing), tempfile.TemporaryDirectory() as temporary:
