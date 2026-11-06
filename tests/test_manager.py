@@ -12,6 +12,59 @@ from agent_profile_manager import manager
 
 
 class ManagerCommandTests(unittest.TestCase):
+    def test_new_force_creates_a_missing_profile(self) -> None:
+        for sharing in ([], ["--isolated"], ["--share", "default"]):
+            with self.subTest(sharing=sharing), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                managed, default = root / "manager", root / "default"
+                default.mkdir()
+                with patch("sys.stdout", new_callable=StringIO):
+                    self.assertEqual(
+                        manager.main([
+                            "--manager-root", str(managed), "--default-home", str(default),
+                            "new", "work", "--force", *sharing,
+                        ]),
+                        0,
+                    )
+                profile = manager.load_profile(managed, "work", default)
+                self.assertEqual(profile["share"], "isolated" if sharing == ["--isolated"] else "default")
+                self.assertTrue(profile["created_at"])
+
+    def test_new_force_preserves_wrapper_metadata_and_created_at(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            default = root / "default"
+            default.mkdir()
+            managed, bin_dir = root / "manager", root / "bin"
+            bin_dir.mkdir()
+            common = ["--manager-root", str(managed), "--default-home", str(default)]
+            with patch("sys.stdout", new_callable=StringIO):
+                self.assertEqual(manager.main([*common, "new", "work"]), 0)
+                self.assertEqual(
+                    manager.main(
+                        [*common, "install", "work", "--wrapper", "custom-work", "--bin-dir", str(bin_dir)]
+                    ),
+                    0,
+                )
+            metadata_path = managed / "profiles" / "work" / "profile.json"
+            before = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+            with patch("sys.stdout", new_callable=StringIO), patch.object(
+                manager, "utc_now", return_value="2099-01-01T00:00:00Z"
+            ):
+                self.assertEqual(manager.main([*common, "new", "work", "--force"]), 0)
+
+            after = json.loads(metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(after["created_at"], before["created_at"])
+            self.assertEqual(after["wrapper"], before["wrapper"])
+            self.assertTrue((bin_dir / "custom-work").is_file())
+            with patch("sys.stdout", new_callable=StringIO):
+                self.assertEqual(
+                    manager.main([*common, "uninstall", "work", "--bin-dir", str(bin_dir)]),
+                    0,
+                )
+            self.assertFalse((bin_dir / "custom-work").exists())
+
     def test_legacy_prefixed_wrapper_remains_manageable(self) -> None:
         for action in ('rename', 'uninstall'):
             with self.subTest(action=action), tempfile.TemporaryDirectory() as temporary:

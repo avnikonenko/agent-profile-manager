@@ -780,12 +780,13 @@ def command_new(args: argparse.Namespace) -> int:
         print(f"error: profile already exists: {name}", file=sys.stderr)
         return 2
 
+    existing_profile = load_profile(root, name, default) if target_profile_dir.exists() else None
     share = args.share
     if args.isolated:
         share = None
     elif share is None:
-        if target_profile_dir.exists() and args.force:
-            existing_share = load_profile(root, name, default)["share"]
+        if existing_profile is not None:
+            existing_share = existing_profile["share"]
             share = None if existing_share == "isolated" else existing_share
         else:
             share = "default"
@@ -816,13 +817,18 @@ def command_new(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    payload = {
-        "name": name,
-        "home": str(home),
-        "conversation_store": str(store),
-        "share": share or "isolated",
-        "created_at": utc_now(),
-    }
+    payload = (
+        existing_profile
+        if existing_profile is not None
+        else {"name": name, "created_at": utc_now()}
+    )
+    payload.update(
+        {
+            "home": str(home),
+            "conversation_store": str(store),
+            "share": share or "isolated",
+        }
+    )
     seeded, _backups = seed_state_files(home, source_home) if source_home else ([], [])
     save_profile(root, payload)
     print(f"Created profile {name}")
