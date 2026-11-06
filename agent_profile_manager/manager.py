@@ -797,6 +797,8 @@ def command_new(args: argparse.Namespace) -> int:
             if existing_profile is not None and existing_profile.get("share") == "isolated"
             else store_dir(root, name)
         )
+        if existing_profile is None and (store.exists() or store.is_symlink()):
+            raise FileExistsError(f"conversation store already exists: {store}")
 
     home = profile_home(root, name)
     if home.exists() and any(home.iterdir()) and not args.force:
