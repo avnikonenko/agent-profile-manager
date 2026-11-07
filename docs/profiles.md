@@ -78,6 +78,27 @@ with macOS Keychain identity.
 
 ## Migrating older Codex profiles
 
+### Short example: merge `codex2` with default
+
+For an existing `codex2` profile configured to share with `default`:
+
+```bash
+# Preview the merge; live databases stay unchanged.
+pm codex migrate-history codex2 --output "$HOME/codex-history-preview"
+
+# Close all Codex clients on every host, then merge with fresh backups.
+pm codex migrate-history codex2 --output "$HOME/codex-history-merged" --apply --clients-stopped
+```
+
+Both output directories must be new. Keep `codex-history-merged` as your backup.
+Reopen both profiles and verify that expected conversations can be resumed.
+This is a one-time migration for older profiles; new profiles share the database
+from creation. Logins stay separate. Existing destination goals/memory are kept;
+source copies are backed up, not merged. Existing shortcuts must use Agent Profile
+Manager, as explained below.
+
+### Migration details
+
 Older profiles shared rollout files but copied the conversation index only once.
 The lists then diverged. Managed launches now refuse a legacy private database
 until you migrate it; installing this code does not migrate live data.
