@@ -1,227 +1,120 @@
 # Profile operations
 
-Use `pm codex COMMAND` or `pm claude COMMAND`. Each provider has its own
-profiles. Only `default` is reserved. Existing default configuration and login
-are used in place.
+Use `pm codex COMMAND` or `pm claude COMMAND`; each has its own profiles.
+`default` is reserved. Global options go before the command; agent arguments
+follow `--`.
 
-| Operation | Codex example | Claude example |
+| Operation | Codex | Claude |
 | --- | --- | --- |
 | Create | `pm codex new work` | `pm claude new work` |
 | List | `pm codex list` | `pm claude list` |
-| Sign in again | `pm codex run work -- login` | `pm claude login work` |
+| Login again | `pm codex run work -- login` | `pm claude login work` |
 | Launch | `pm codex run work` | `pm claude run work` |
 | Resume | `pm codex run work -- resume` | `pm claude run work -- --resume` |
 | Rename | `pm codex rename work office` | `pm claude rename work office` |
-| Locate home | `pm codex path work` | `pm claude path work` |
-| Locate history | `pm codex path work --store` | `pm claude path work --store` |
+| Home / store | `pm codex path work [--store]` | `pm claude path work [--store]` |
 | Diagnose | `pm codex doctor work` | `pm claude doctor work` |
-| Install shortcut | `pm codex install work --wrapper codex-work` | `pm claude install work --wrapper claude-work` |
-| Remove shortcut | `pm codex uninstall work` | `pm claude uninstall work` |
-| Remove profile | `pm codex remove work` | `pm claude remove work` |
+| Shortcut | `pm codex install work --wrapper codex-work` | `pm claude install work --wrapper claude-work` |
+| Uninstall | `pm codex uninstall work` | `pm claude uninstall work` |
+| Remove | `pm codex remove work` | `pm claude remove work` |
 
-Use provider-specific `--help` to see options. Global options precede the
-command; launch arguments follow `--`. For example:
+For custom locations: `pm codex --manager-root /path/to/manager --default-home /path/to/codex list`.
+Square brackets in the table mean an optional argument; omit the brackets.
 
-```bash
-pm claude --manager-root /path/to/manager new work
-pm codex --default-home /path/to/existing/codex list
-```
+## Sharing
 
-## Sharing conversations
+`new NAME` shares with `default`; use `--isolated` or `--share PROFILE` instead.
+These options do not merge existing histories. `new NAME --force` preserves an
+existing profile's setup when no sharing option is supplied. Names, including
+`isolated`, are distinct from sharing modes; reusing a source name cannot redirect
+its followers.
 
-Both providers' `new` commands share history with `default` unless you supply
-`--isolated`. Existing profiles retain their configuration, including when
-reused with `new NAME --force` without sharing options.
+- **Codex:** shares sessions and live SQLite indexes, goals, and memory.
+- **Claude:** shares `projects/` sessions and auto memory. A missing default
+  projects directory is created privately; another source must already exist.
 
-```bash
-pm codex new work                     # Share default history
-pm claude new work                    # Share default projects and memory
-pm codex new private-work --isolated
-pm claude new private-work --isolated
-```
+Credentials/configuration stay separate. Stop working on a conversation before
+resuming it under another account; sharing does not release writer locks.
+`repair NAME` checks Codex's SQLite location or repairs a missing Claude projects
+link. Claude homes stay stable across renames for Keychain compatibility.
 
-Use `--share PROFILE` to choose a different source. `--share` and `--isolated`
-are mutually exclusive. These options do not migrate or merge existing histories.
-
-Codex shares session files and a live SQLite directory, so conversation lists,
-goals, and memory state are shared too. Credentials and account configuration
-stay in separate homes. Managed launches set `CODEX_SQLITE_HOME` and a
-`sqlite_home` CLI override to the resolved shared SQLite directory; conflicting `sqlite_home`
-settings in a managed profile do not redirect that launch. Sharing with default
-resolves the default user config's top-level `sqlite_home` first, then
-`CODEX_SQLITE_HOME`, then the default home. Relative environment paths resolve
-from the working directory. Use an absolute config path; config-profile-specific
-SQLite overrides are rejected with instructions to use a top-level setting.
-Storage configuration is parsed as TOML, including quoted keys. Reading any
-nonempty Codex configuration requires Python 3.11 or newer; on Python 3.10
-the manager refuses to guess SQLite locations from unparsed configuration.
-Existing profiles and migration use the same resolver. A source name is followed
-only while it still identifies the same conversation store. Removing a source
-and reusing its name does not redirect existing followers. Sharing mode is
-recorded separately from source names for both providers, so a profile named
-`isolated` is valid.
-See the
-[official SQLite location settings](https://learn.chatgpt.com/docs/config-file/environment-variables#core-locations).
-
-Claude links `projects/`, sharing
-sessions and auto memory while keeping credentials and account configuration
-separate. If the default Claude projects directory is missing, creation makes
-an empty one privately. A different source profile must have an existing store.
-Stop work on a conversation before resuming it under another account: sharing
-does not release writer locks or move a running session.
-
-`repair NAME` checks the Codex SQLite location or repairs a missing managed
-Claude projects link. Codex repair no longer overwrites a copied database.
-It is provider-specific; it is not a general credential repair.
-Claude account directories stay at a stable path across renames for compatibility
-with macOS Keychain identity.
+Codex resolves default SQLite storage from top-level `sqlite_home` in default's
+config, then `CODEX_SQLITE_HOME`, then the default home. Managed launches enforce
+the resolved directory. Use absolute config paths; config-profile SQLite overrides
+are refused. Nonempty TOML requires Python 3.11+; Python 3.10 refuses to guess.
+See [official location settings](https://learn.chatgpt.com/docs/config-file/environment-variables#core-locations).
 
 ## Migrating older Codex profiles
 
-### Short example: merge `codex2` with default
-
-For an existing `codex2` profile configured to share with `default`:
+Older profiles copied indexes once, causing history lists to diverge. Migration
+is a one-time step; new profiles share SQLite immediately. For an existing
+`codex2` configured to share with default:
 
 ```bash
-# Preview the merge; live databases stay unchanged.
+# Preview only; output directory must not exist.
 pm codex migrate-history codex2 --output "$HOME/codex-history-preview"
 
-# Close all Codex clients on every host, then merge with fresh backups.
+# Close ALL Codex apps, CLIs, servers, and jobs on EVERY host first.
 pm codex migrate-history codex2 --output "$HOME/codex-history-merged" --apply --clients-stopped
 ```
 
-Both output directories must be new. Keep `codex-history-merged` as your backup.
-Reopen both profiles and verify that expected conversations can be resumed.
-This is a one-time migration for older profiles; new profiles share the database
-from creation. Logins stay separate. Existing destination goals/memory are kept;
-source copies are backed up, not merged. Existing shortcuts must use Agent Profile
-Manager, as explained below.
+Keep clients stopped until completion. Apply takes fresh backups into a new
+output directory; a running-client preview is not an apply-ready snapshot.
+Reopen both profiles and verify listing/resume before deleting backups. Update
+old shortcuts to use this package; see [compatibility](security.md).
 
-### Migration details
+Migration backs up source/destination databases, metadata, and logs, writes a
+`report.json`, and preserves conversation keys from both copies. Newer thread
+metadata wins (destination on ties); per-record ordinals resolve item updates.
+Complementary null fields can combine; ambiguous conflicts stop migration.
+Earlier consistent projection cursors are retained, and rollout paths are normalized.
 
-Older profiles shared rollout files but copied the conversation index only once.
-The lists then diverged. Managed launches now refuse a legacy private database
-until you migrate it; installing this code does not migrate live data.
-The legacy source is resolved from that profile's configuration and inherited
-`CODEX_SQLITE_HOME`, separately from the shared destination. Databases outside
-the profile home are detected and backed up there; local shadow databases are
-also retained under `legacy-home/`. Source config-profile-specific SQLite
-overrides are refused as ambiguous: put the source location at the top level
-of its `config.toml` before migration. Open-file checks cover the profile home,
-source database directory, and shared destination.
+Existing destination goals/memory are retained; source copies are backed up,
+**not merged**. Missing destination databases are seeded from source. External
+legacy databases are resolved from source configuration/environment; home-local
+shadow copies are also saved under `legacy-home/`. Migration can adopt a legacy
+profile already using the shared SQLite directory.
 
-If a legacy profile already uses the destination's SQLite directory, migration
-still backs it up and records the binding, allowing future launches without
-repeated migration warnings.
+Limits: Linux apply only; matching supported `state_5.sqlite` and
+`thread_history_1.sqlite` schemas required. Unknown schemas/versions are refused.
+Open-file checks exclude reported protected session services; they cannot detect
+remote-host clients or prevent new clients starting. Backups can contain sensitive
+data. Publishing failures trigger rollback attempts, but crashes or failed restores
+may require manual recovery: publication across files is not crash-atomic.
 
-Prepare a migration without changing live databases:
+## Rename and removal
 
-```bash
-pm codex migrate-history work --output /private/path/work-preview
-```
+Codex rename requires stopped clients when indexes exist. It backs up indexes,
+normalizes old-home rollout paths, and attempts rollback on failure. It refuses
+to move a home containing an explicit SQLite location or another profile's data.
+Keep printed index backups until resume is verified.
 
-The output directory must not exist. It contains private SQLite snapshots,
-prepared merged conversation databases, the original profile metadata, and a
-`report.json`. It can contain sensitive conversations and logs; keep it private.
-Preparation while clients are active is a preview, not an apply-ready snapshot.
+Removal moves profile data to trash and retains the conversation store by default.
+`--remove-store` also removes an eligible store; `--purge` deletes permanently.
+Use `--uninstall` to remove a registered shortcut. Default data, external/symlinked
+stores, and directories used by other profiles (including SQLite-only users) are
+protected. Untracked Codex wrappers must match recognized manager contents.
 
-Close **all Codex apps, CLIs, app servers, and background jobs** using either
-home, on every host. Then create a fresh migration and apply it:
-
-```bash
-pm codex migrate-history work --output /private/path/work-migration --apply --clients-stopped
-```
-
-Apply checks for open SQLite files on Linux and refuses schema differences.
-It reports excluded protected session services (systemd/PAM, SSH agent, and
-the speech service); these are not database clients. Other uninspectable
-processes cause refusal.
-Keep clients stopped until it finishes. The checks cannot prevent another
-client starting during migration or detect clients on another host.
-
-Conversation IDs are merged from both indexes; newer thread timestamps select
-thread metadata, with destination winning ties. Turns, items and related records
-are merged by their individual primary keys, preserving every key from either
-database. Per-event ordinals select newer versions of the same record; equal
-versions can combine complementary null fields. Ambiguous conflicting content
-stops migration before publication. Projection cursors retain the earlier
-consistent position so replay cannot skip missing data. Rollout paths through the source profile are rewritten to the shared
-store, so migrated entries do not depend on that profile alias. Schemas must
-match: upgrade both profiles using the same Codex version before migration if
-necessary. Original databases in both homes are backed up;
-source files remain in place. Destination goals and memory remain authoritative;
-source goals/memory are backed up but **not automatically merged**. If a
-non-conversation database does not exist at the destination, the source copy
-is preserved there (useful when migrating a private store). Review them
-separately if you need their contents. Diagnostic logs are also backed up.
-
-Only state_5.sqlite and thread_history_1.sqlite conversation schemas are
-supported. Unknown conversation tables or database versions stop migration.
-Do not delete backups until you have verified both profiles can list and resume
-the expected conversations. Apply uses backups to roll back database changes
-if publishing fails. Each publication and restore uses a unique temporary
-directory, and all restores are attempted even if one fails. Any incomplete
-rollback reports the affected files and backup location. An interrupted process
-may require manual recovery from
-those backups; publication across multiple files is not crash-atomic.
-
-Existing shortcuts may still call Codex Tools. After migration, reinstall those
-shortcuts using Agent Profile Manager as described in [security.md](security.md).
-Using the old launcher again would keep writing the private index.
-
-## Renaming Codex profiles with indexed history
-
-Renaming keeps session-store locations stable. When a SQLite index exists,
-close Codex clients using that index before renaming. The command checks for
-open database files, refuses to move a home containing another profile's
-SQLite directory (or an explicit SQLite home inside itself), backs up the index,
-rewrites paths through the old profile
-home to the shared session store, and then moves the home. If publication or
-metadata saving fails, it attempts to restore the original home, indexes,
-dependents, and wrapper. Keep the printed index backups until resume is verified.
-
-## Encrypted account transfers
+## Encrypted transfers
 
 ```bash
 pm codex export work --output work.codex-profile
 pm codex import work.codex-profile --name transferred --isolated
-
 pm claude export work --output work.claude-profile
 pm claude import work.claude-profile --name transferred
 ```
 
-For Codex imports, keep `--isolated` as shown to select a private destination;
-omitting it retains the original import behavior of sharing with `default`.
-Claude imports are always private for new profiles.
+Enter a passphrase when prompted. Bundles contain usable file-backed credentials
+and configuration; keep them private. Codex import shares with default unless
+`--isolated` is given; new Claude imports are always private. Default Claude
+imports are refused. Keychain-only credentials require login on the destination;
+macOS Keychain can override imported files.
 
-Enter the passphrase when prompted. Exports contain file-backed credentials and
-profile configuration. For Claude, add `--include-conversations` to export sessions and auto memory
-under `projects/`. Codex v1 bundles carry legacy rollout files only. Codex
-`--include-conversations` now refuses SQLite-backed/paginated history and
-unknown database versions rather than creating an incomplete backup. Login-only
-Codex exports remain supported. Keep the original SQLite databases; a login-only
-bundle is not a conversation backup.
+Claude `--include-conversations` includes sessions/auto memory. Codex v1 bundles
+support legacy rollout files only and refuse SQLite-backed history or unknown
+versions. A login-only export is **not a conversation backup**.
 
-`import --force` updates an existing account's login and bundled configuration,
-preserving history. Claude makes a private backup and explicitly skips bundled
-history during a forced update. With `--install`, wrapper collisions and other
-predictable installation failures are checked before publishing imported login
-data. Installation checks run again at publication; concurrent filesystem
-changes can still cause an install failure after import. Default Claude imports are refused: select a
-managed name instead. Keychain-only Claude credentials are not exported; sign
-in again on the destination. macOS Keychain can take precedence over imported
-file-backed credentials.
-
-## Removal
-
-Removal uses a manager trash area by default. A profile's conversation store is
-retained unless `--remove-store` is explicitly selected. Stores and profile directories used by other profiles
-(including default and SQLite-only users) are protected. Store deletion is
-restricted to direct managed-store directories; default/external paths and
-symlink roots are refused before wrappers or metadata are changed. Claude also
-protects resolved default home/projects aliases, including symlinked project
-stores. Unregistered Codex shortcuts are removed only when their contents match
-a recognized manager wrapper, even when an explicit command name is supplied. `--purge` permanently deletes the selected profile data.
-Use `--uninstall` when removing a profile with its installed wrapper.
-
-See [security and compatibility](security.md) before transferring accounts.
+`import --force` updates login/configuration and preserves the existing store;
+Claude backs up login data and skips bundled history. Claude preflights predictable
+`--install` failures, but a concurrent filesystem change can still fail installation
+after import. See [security](security.md).

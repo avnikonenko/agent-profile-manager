@@ -1,48 +1,34 @@
 # Changelog
 
-Changes are grouped by version. Git tags identify released commits; an
-unreleased entry describes work that has not yet been tagged.
+Git tags identify releases; unreleased entries describe untagged work.
 
 ## 0.2.0 — Unreleased
 
 ### Added
 
-- Live shared Codex SQLite history, including conversation indexes, goals, and
-  memory, with separate account logins.
-- Offline `pm codex migrate-history NAME` with preview, private backups,
-  record-preserving merge, and stopped-client checks.
-- Explicit sharing modes for Codex and Claude, independent of profile names.
+- Live shared Codex SQLite indexes, goals, and memory; logins remain separate.
+- Offline history migration with preview, private backups, record-preserving
+  merge, and stopped-client checks.
+- Explicit sharing modes independent of profile names.
 
 ### Fixed
 
-- Forced profile creation preserves creation timestamps and registered wrappers.
-- Renamed profiles retain history stores and usable indexed conversation paths.
-- Reusing or removing a source name does not silently redirect followers.
-- Removal protects default data, shared stores, and SQLite-only users.
-- Uninstall verifies unregistered wrappers and avoids deleting unrelated files.
-- Claude import checks predictable wrapper installation failures before replacing
-  login data.
-- SQLite location resolution handles external legacy databases and quoted TOML
-  keys consistently.
+- Forced creation preserves timestamps/wrappers; rename preserves history paths.
+- Source removal/name reuse cannot silently redirect followers.
+- Removal protects default/shared data; uninstall verifies untracked wrappers.
+- Claude import preflights installation conflicts before replacing login data.
+- SQLite resolution handles external legacy databases and quoted TOML keys.
 
-### Compatibility and safety
+### Compatibility
 
-- Older Codex profiles with copied indexes require a one-time offline migration.
-  New profiles use their selected SQLite directory immediately.
-- Codex v1 conversation exports refuse SQLite-backed history rather than produce
-  incomplete backups. Login/configuration-only exports remain supported.
-- Nonempty Codex TOML configuration requires Python 3.11 or newer for reliable
-  storage resolution. Python 3.10 without configuration remains supported.
-- Renaming indexed Codex profiles requires stopped clients and retains backups.
-- Existing destination goals and memory are retained during migration; source
-  copies are backed up rather than automatically merged.
+- Older copied indexes need one-time migration; new profiles share immediately.
+- Codex v1 exports refuse SQLite history; login-only exports remain supported.
+- Nonempty Codex TOML requires Python 3.11+; config-free Python 3.10 still works.
+- Indexed Codex rename requires stopped clients and retains backups.
+- Migration retains destination goals/memory; source copies are backed up, not merged.
 
 ## 0.1.0 — Initial development baseline
 
-The original package version was 0.1.0; no release tag was created.
-
-- Separate Codex and Claude profiles, interactive login, and launch wrappers.
-- Shared history by default, with `--isolated` and `--share PROFILE` options.
-- Profile rename, inspection, repair, removal, and encrypted account transfers.
-- `pm` as the short command, with `agent-profile-manager` as the full command.
-- MIT license and attribution to Codex Tools by Miroslav Hruska.
+Original package version, without a release tag: separate Codex/Claude profiles,
+login, wrappers, shared/private history, lifecycle commands, and encrypted
+transfers. Added `pm` shorthand; preserved Miroslav Hruska's MIT attribution.
