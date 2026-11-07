@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import getpass
 import hashlib
 import json
@@ -346,7 +347,6 @@ def retained_sqlite_home(
     return Path(str(profile.get("sqlite_home") or profile["conversation_store"])).expanduser().resolve()
 
 
-
 def store_from_profile(profile: dict[str, Any]) -> Path:
     return Path(str(profile["conversation_store"])).expanduser().resolve()
 
@@ -555,10 +555,47 @@ def zip_add_tree(archive: zipfile.ZipFile, source: Path, arcname: str) -> None:
             zip_add_file(archive, path, f"{arcname.rstrip('/')}/{relative}")
 
 
+def validate_conversation_export(profile: dict[str, Any], sqlite_home: Path | None = None) -> None:
+    """The portable v1 format carries rollouts, not paginated SQLite history."""
+    directories = {home_from_profile(profile), store_from_profile(profile)}
+    if sqlite_home is not None:
+        directories.add(sqlite_home)
+    elif profile.get("sqlite_home"):
+        directories.add(Path(str(profile["sqlite_home"])).expanduser().resolve())
+    if not profile.get("sqlite_home"):
+        directories.add(legacy_sqlite_home(profile))
+    for directory in sorted(directories):
+        for database in sorted(directory.glob("*.sqlite")):
+            if database.name.startswith(("state_", "thread_history_")):
+                if database.name not in {"state_5.sqlite", "thread_history_1.sqlite"}:
+                    raise ValueError("unsupported conversation database version; cannot guarantee a complete conversation export")
+            else:
+                continue
+            with closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+                tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                paginated = False
+                if database.name == "state_5.sqlite" and "threads" in tables:
+                    fields = {row[1] for row in db.execute("PRAGMA table_info(threads)")}
+                    if "history_mode" in fields:
+                        paginated = db.execute("SELECT 1 FROM threads WHERE history_mode IS NOT 'legacy' LIMIT 1").fetchone() is not None
+                if database.name == "thread_history_1.sqlite":
+                    for table in ("thread_items", "thread_turns", "thread_realtime_items"):
+                        if table in tables and db.execute(f'SELECT 1 FROM "{table}" LIMIT 1').fetchone():
+                            paginated = True
+                            break
+                if paginated:
+                    raise ValueError(
+                        "conversation export refused: the v1 bundle cannot preserve SQLite-backed history; "
+                        "omit --include-conversations for login/configuration only. "
+                        "Keep the original history databases; this is not a conversation backup."
+                    )
+
+
 def create_profile_archive(
     archive_path: Path,
     profile: dict[str, Any],
     include_conversations: bool,
+    sqlite_home: Path | None = None,
 ) -> None:
     home = home_from_profile(profile)
     auth = home / "auth.json"
@@ -568,6 +605,8 @@ def create_profile_archive(
         )
     if auth.is_symlink() or not auth.is_file():
         raise ValueError(f"refusing to export non-regular credential file: {auth}")
+    if include_conversations:
+        validate_conversation_export(profile, sqlite_home)
 
     config = home / "config.toml"
     manifest = {
@@ -692,6 +731,10 @@ def restore_conversations(archive: zipfile.ZipFile, store: Path) -> None:
 
 def command_export(args: argparse.Namespace) -> int:
     profile = load_profile(manager_root(args), args.name, default_home(args))
+    sqlite_home = None
+    if args.include_conversations:
+        sqlite_home = profile_sqlite_home(profile, manager_root(args), default_home(args), check_legacy=False)
+        validate_conversation_export(profile, sqlite_home)
     output = (args.output or Path(f"{args.name}.codex-profile")).expanduser().resolve()
     if output.exists():
         print(f"error: refusing to replace existing export: {output}", file=sys.stderr)
@@ -706,7 +749,8 @@ def command_export(args: argparse.Namespace) -> int:
         encrypted_path = output.with_name(f".{output.name}.tmp-{secrets.token_hex(4)}")
         try:
             create_profile_archive(
-                archive_path, profile, include_conversations=args.include_conversations
+                archive_path, profile, include_conversations=args.include_conversations,
+                sqlite_home=sqlite_home,
             )
             profile_bundle.encrypt_file(archive_path, encrypted_path, passphrase)
             try:
@@ -883,7 +927,6 @@ def command_import(args: argparse.Namespace) -> int:
     return 0
 
 
-
 def command_new(args: argparse.Namespace) -> int:
     root = manager_root(args)
     default = default_home(args)
@@ -976,7 +1019,6 @@ def command_new(args: argparse.Namespace) -> int:
     return 0
 
 
-
 def command_list(args: argparse.Namespace) -> int:
     root = manager_root(args)
     default = default_home(args)
@@ -1043,7 +1085,6 @@ def command_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
-
 def command_repair(args: argparse.Namespace) -> int:
     root = manager_root(args)
     default = default_home(args)
@@ -1051,7 +1092,6 @@ def command_repair(args: argparse.Namespace) -> int:
     sqlite_home = profile_sqlite_home(profile, root, default)
     print(f"SQLite state is used directly at {sqlite_home}; no copied index needs reseeding.")
     return 0
-
 
 
 def command_run(args: argparse.Namespace) -> int:
@@ -1077,7 +1117,6 @@ def command_run(args: argparse.Namespace) -> int:
         return 127
     os.execvpe(executable, command, env)
     return 127
-
 
 
 def wrapper_script(name: str, codex_binary: str, root: Path, default: Path) -> str:
@@ -1163,7 +1202,6 @@ def discover_untracked_wrapper(
     return None
 
 
-
 def command_install(args: argparse.Namespace) -> int:
     root = manager_root(args)
     default = default_home(args)
@@ -1245,7 +1283,6 @@ def command_uninstall(args: argparse.Namespace) -> int:
         save_profile(root, profile)
     print(f"Removed {target}")
     return 0
-
 
 
 def command_rename(args: argparse.Namespace) -> int:
@@ -1407,8 +1444,6 @@ def command_rename(args: argparse.Namespace) -> int:
     return 0
 
 
-
-
 def validate_removal_paths(
     root: Path, default: Path, profile: dict[str, Any], remove_store: bool,
 ) -> None:
@@ -1442,7 +1477,6 @@ def validate_removal_paths(
         for path in paths:
             if any(reference == path or path in reference.parents for reference in references):
                 raise ValueError(f"refusing to remove storage still used by profile {other['name']}: {path}")
-
 
 
 def command_remove(args: argparse.Namespace) -> int:
@@ -1486,7 +1520,6 @@ def command_remove(args: argparse.Namespace) -> int:
         trashed_store = move_to_trash(root, store)
         print(f"Moved conversation store to trash: {trashed_store}")
     return 0
-
 
 
 def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
@@ -1664,8 +1697,6 @@ def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
     return parser
 
 
-
-
 def normalize_remainder(args: argparse.Namespace) -> None:
     if hasattr(args, "codex_args") and args.codex_args[:1] == ["--"]:
         args.codex_args = args.codex_args[1:]
@@ -1715,7 +1746,6 @@ def main(argv: list[str] | None = None, *, prog: str = "pm codex") -> int:
     except sqlite3.Error as exc:
         print(f"error: SQLite operation failed: {exc}", file=sys.stderr)
         return 2
-
 
 
 if __name__ == "__main__":
