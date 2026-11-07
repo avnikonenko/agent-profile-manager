@@ -79,6 +79,10 @@ Use `--share work` to share another profile instead. Logins stay separate in
 every mode. These options apply when creating profiles; existing histories are not merged
 or moved.
 
+Codex sharing includes its live SQLite conversation index, goals, and memory.
+Older profiles with copied indexes need an offline migration; see
+[migration instructions](docs/profiles.md#migrating-older-codex-profiles).
+
 ## Shortcuts
 
 ```bash
