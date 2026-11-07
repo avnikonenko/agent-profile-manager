@@ -227,8 +227,124 @@ def profile_environment(
     base: dict[str, str] | None = None,
 ) -> dict[str, str]:
     env = dict(os.environ if base is None else base)
-    env["CODEX_HOME"] = str(resolve_profile_home(name, root, default))
+    root, default = root.expanduser().resolve(), default.expanduser().resolve()
+    profile = load_profile(root, name, default)
+    env["CODEX_HOME"] = str(home_from_profile(profile))
+    env["CODEX_SQLITE_HOME"] = str(profile_sqlite_home(profile, root, default, base))
     return env
+
+
+def read_sqlite_config(path: Path) -> dict[str, Any]:
+    """Parse storage settings without approximating valid TOML keys with regexes."""
+    if not path.exists():
+        return {}
+    text = path.read_text()
+    if not text.strip():
+        return {}
+    try:
+        import tomllib
+    except ImportError as exc:
+        raise ValueError(
+            "resolving SQLite settings from config.toml requires Python 3.11 or newer; "
+            "cannot safely parse this configuration on Python 3.10"
+        ) from exc
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"cannot resolve SQLite home: invalid TOML in {path.name}") from exc
+
+
+def default_sqlite_home(default: Path, base: dict[str, str] | None = None) -> Path:
+    default = default.expanduser().resolve()
+    env = os.environ if base is None else base
+    data = read_sqlite_config(default / "config.toml")
+    configured = data.get("sqlite_home")
+    selected = data.get("profile")
+    profiles = data.get("profiles", {})
+    if selected:
+        if not isinstance(selected, str) or Path(selected).name != selected or selected in {".", ".."}:
+            raise ValueError("invalid selected Codex config profile")
+        if isinstance(profiles, dict) and isinstance(profiles.get(selected), dict):
+            if "sqlite_home" in profiles[selected]:
+                raise ValueError("put shared sqlite_home at the top level of config.toml, not inside a config profile")
+        profile_data = read_sqlite_config(default / (selected + ".config.toml"))
+        if "sqlite_home" in profile_data:
+            raise ValueError("put shared sqlite_home in config.toml, not a separate config-profile file")
+    if configured is not None:
+        if not isinstance(configured, str) or not configured:
+            raise ValueError("sqlite_home must be a nonempty path string")
+        path = Path(configured).expanduser()
+        if not path.is_absolute():
+            raise ValueError("use an absolute sqlite_home path in config.toml for shared profiles")
+        return path.resolve()
+    return Path(env.get("CODEX_SQLITE_HOME") or default).expanduser().resolve()
+
+
+def legacy_sqlite_home(profile: dict[str, Any], base: dict[str, str] | None = None) -> Path:
+    """Resolve the old launcher's actual source separately from its new store."""
+    return default_sqlite_home(home_from_profile(profile), base)
+
+
+def profile_is_isolated(profile: dict[str, Any]) -> bool:
+    mode = profile.get("sharing_mode")
+    if mode is not None:
+        if mode not in {"shared", "isolated"}:
+            raise ValueError("invalid profile sharing mode")
+        return mode == "isolated"
+    if profile.get("share") != "isolated":
+        return False
+    # Older metadata used the same value for a mode and a valid source name.
+    # A private store must be in this profile registry's stores area. A shared
+    # external/default store cannot become private just because of the name.
+    home = home_from_profile(profile)
+    return len(home.parents) >= 3 and store_from_profile(profile).parent == home.parents[2] / "stores"
+
+
+def profile_sqlite_home(
+    profile: dict[str, Any], root: Path = DEFAULT_MANAGER_ROOT,
+    default: Path = DEFAULT_CODEX_HOME, base: dict[str, str] | None = None,
+    check_legacy: bool = True,
+) -> Path:
+    home = home_from_profile(profile)
+    if check_legacy and profile.get("name") != "default" and not profile.get("sqlite_home"):
+        source_sqlite = legacy_sqlite_home(profile, base)
+        if any(source_sqlite.glob("*.sqlite")) or any(home.glob("*.sqlite")):
+            raise ValueError(
+                "legacy private SQLite state needs migration; stop Codex and run "
+                f"'pm codex migrate-history {profile['name']}' to prepare it"
+            )
+    current = profile
+    visited = set()
+    while current.get("name") != "default" and not profile_is_isolated(current):
+        name = current.get("share")
+        if not name or name in visited:
+            raise ValueError("invalid or cyclic profile sharing chain")
+        visited.add(name)
+        try:
+            candidate = load_profile(root, str(name), default)
+        except FileNotFoundError:
+            # Removing a source profile does not remove the retained store.
+            return retained_sqlite_home(profile, default, base)
+        if store_from_profile(candidate) != store_from_profile(current):
+            # The source was removed and its name reused for a different store.
+            # A display name is not a storage identity: retain the saved binding.
+            return retained_sqlite_home(profile, default, base)
+        current = candidate
+    if current.get("name") == "default":
+        return default_sqlite_home(default, base)
+    return Path(str(current.get("sqlite_home") or current["conversation_store"])).expanduser().resolve()
+
+
+def retained_sqlite_home(
+    profile: dict[str, Any], default: Path, base: dict[str, str] | None = None,
+) -> Path:
+    """Resolve an orphaned sharing chain from its retained storage identity."""
+    if store_from_profile(profile) == default.expanduser().resolve():
+        # Default's database may have moved since this follower was created.
+        # Its session store still identifies default even without a source name.
+        return default_sqlite_home(default, base)
+    return Path(str(profile.get("sqlite_home") or profile["conversation_store"])).expanduser().resolve()
+
 
 
 def store_from_profile(profile: dict[str, Any]) -> Path:
@@ -742,10 +858,10 @@ def command_import(args: argparse.Namespace) -> int:
                     "home": str(home),
                     "conversation_store": str(store),
                     "share": "isolated" if private_store else "default",
+                    "sharing_mode": "isolated" if private_store else "shared",
                     "created_at": utc_now(),
+                    "sqlite_home": str(store if private_store else default_sqlite_home(default)),
                 }
-                if not private_store:
-                    seed_state_files(home, default)
                 save_profile(root, payload)
             except Exception:
                 if target_profile.exists():
@@ -765,6 +881,7 @@ def command_import(args: argparse.Namespace) -> int:
     if args.install:
         return command_install(args_for_install(args, name))
     return 0
+
 
 
 def command_new(args: argparse.Namespace) -> int:
@@ -787,18 +904,29 @@ def command_new(args: argparse.Namespace) -> int:
     elif share is None:
         if existing_profile is not None:
             existing_share = existing_profile["share"]
-            share = None if existing_share == "isolated" else existing_share
+            share = None if profile_is_isolated(existing_profile) else existing_share
         else:
             share = "default"
 
     if share is None:
         store = (
             store_from_profile(existing_profile)
-            if existing_profile is not None and existing_profile.get("share") == "isolated"
+            if existing_profile is not None and profile_is_isolated(existing_profile)
             else store_dir(root, name)
         )
         if existing_profile is None and (store.exists() or store.is_symlink()):
             raise FileExistsError(f"conversation store already exists: {store}")
+    else:
+        try:
+            shared_profile = load_profile(root, share, default)
+        except FileNotFoundError:
+            if existing_profile is None or existing_profile.get("share") != share:
+                raise
+            shared_profile = existing_profile
+        if existing_profile is not None and existing_profile.get("share") == share:
+            if store_from_profile(shared_profile) != store_from_profile(existing_profile):
+                shared_profile = existing_profile
+        shared_sqlite_home = profile_sqlite_home(shared_profile, root, default)
 
     home = profile_home(root, name)
     if home.exists() and any(home.iterdir()) and not args.force:
@@ -808,15 +936,12 @@ def command_new(args: argparse.Namespace) -> int:
     copy_default_config(home, default)
 
     if share:
-        shared_profile = load_profile(root, share, default)
         store = store_from_profile(shared_profile)
-        source_home = home_from_profile(shared_profile)
         if share == "default":
             ensure_default_shared_paths(store)
         else:
             ensure_store(store)
     else:
-        source_home = None
         ensure_store(store)
 
     try:
@@ -835,9 +960,11 @@ def command_new(args: argparse.Namespace) -> int:
             "home": str(home),
             "conversation_store": str(store),
             "share": share or "isolated",
+            "sharing_mode": "shared" if share else "isolated",
         }
     )
-    seeded, _backups = seed_state_files(home, source_home) if source_home else ([], [])
+    if existing_profile is None:
+        payload["sqlite_home"] = str(shared_sqlite_home if share else store)
     save_profile(root, payload)
     print(f"Created profile {name}")
     print("Auth/config: isolated")
@@ -845,10 +972,9 @@ def command_new(args: argparse.Namespace) -> int:
         print(f"Conversations: shared with {share}")
     else:
         print("Conversations: isolated")
-    if seeded:
-        print(f"Seeded state: {', '.join(seeded)}")
     print(f"Run: pm codex run {name}")
     return 0
+
 
 
 def command_list(args: argparse.Namespace) -> int:
@@ -892,6 +1018,12 @@ def command_doctor(args: argparse.Namespace) -> int:
     print("Config: isolated" if profile["name"] != "default" else "Config: default")
     print(f"Conversations: {profile.get('share', 'unknown')}")
     print(f"Conversation store: {display_path(store)}")
+    try:
+        sqlite_home = profile_sqlite_home(profile, manager_root(args), default_home(args))
+        print(f"SQLite home: {display_path(sqlite_home)}")
+    except ValueError as exc:
+        sqlite_home = home
+        print(f"SQLite migration required: {exc}")
     wrapper = wrapper_from_profile(profile)
     if wrapper:
         print(f"Wrapper: {wrapper.get('command')} -> {wrapper.get('path')}")
@@ -906,42 +1038,46 @@ def command_doctor(args: argparse.Namespace) -> int:
             status = "local"
         print(f"{rel}: {status}")
     for rel in ("auth.json", "config.toml", "thread_history_1.sqlite", "state_5.sqlite"):
-        path = home / rel
+        path = (sqlite_home if rel.endswith(".sqlite") else home) / rel
         print(f"{rel}: {'present' if path.exists() else 'missing'}")
     return 0
+
 
 
 def command_repair(args: argparse.Namespace) -> int:
     root = manager_root(args)
     default = default_home(args)
     profile = load_profile(root, args.name, default)
-    home = home_from_profile(profile)
-    source_home = shared_source_home(root, str(profile.get("share") or ""), default)
-    if source_home is None:
-        print(f"Profile {args.name} does not share with another profile.")
-        return 0
-    seeded, backups = seed_state_files(home, source_home, force=args.force)
-    if seeded:
-        print(f"Seeded state for {args.name}: {', '.join(seeded)}")
-        for backup in backups:
-            print(f"Backup: {backup}")
-    else:
-        print(f"No missing seedable state files for {args.name}.")
+    sqlite_home = profile_sqlite_home(profile, root, default)
+    print(f"SQLite state is used directly at {sqlite_home}; no copied index needs reseeding.")
     return 0
+
 
 
 def command_run(args: argparse.Namespace) -> int:
     profile = load_profile(manager_root(args), args.name, default_home(args))
-    home = home_from_profile(profile)
     command = [args.codex_binary, *args.codex_args]
-    env = os.environ.copy()
-    env["CODEX_HOME"] = str(home)
+    env = profile_environment(args.name, manager_root(args), default_home(args))
+    if args.name != "default":
+        for index, argument in enumerate(args.codex_args):
+            value = ""
+            if argument in {"-c", "--config"} and index + 1 < len(args.codex_args):
+                value = args.codex_args[index + 1]
+            elif argument.startswith("--config="):
+                value = argument[len("--config="):]
+            elif argument.startswith("-c"):
+                value = argument[2:]
+            if value.partition("=")[0].strip() == "sqlite_home":
+                raise ValueError("managed profiles cannot override sqlite_home; it must match their conversation store")
+        # CLI config wins over inherited or copied sqlite_home settings.
+        command[1:1] = ["-c", "sqlite_home=" + json.dumps(env["CODEX_SQLITE_HOME"])]
     executable = shutil.which(args.codex_binary)
     if executable is None:
         print(f"error: could not find Codex executable: {args.codex_binary}", file=sys.stderr)
         return 127
     os.execvpe(executable, command, env)
     return 127
+
 
 
 def wrapper_script(name: str, codex_binary: str, root: Path, default: Path) -> str:
@@ -1170,7 +1306,9 @@ def command_rename(args: argparse.Namespace) -> int:
     dependents = [
         candidate
         for candidate in iter_managed_profiles(root)
-        if candidate.get("name") != old_name and candidate.get("share") == old_name
+        if candidate.get("name") != old_name
+        and not profile_is_isolated(candidate)
+        and candidate.get("share") == old_name
     ]
 
     old_path.rename(new_path)
@@ -1198,6 +1336,7 @@ def command_rename(args: argparse.Namespace) -> int:
     if wrapper and new_wrapper_path:
         print(f"Wrapper: {new_wrapper_path.name} -> {new_wrapper_path}")
     return 0
+
 
 
 def command_remove(args: argparse.Namespace) -> int:
@@ -1416,11 +1555,13 @@ def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
     doctor.add_argument("name", type=valid_name)
     doctor.set_defaults(func=command_doctor)
 
-    repair = sub.add_parser("repair", help="Seed missing derived state for a profile.")
+    repair = sub.add_parser("repair", help="Check the profile's SQLite history setup.")
     repair.add_argument("name", type=valid_name)
-    repair.add_argument("--force", action="store_true", help="Replace existing seedable state.")
+    repair.add_argument("--force", action="store_true", help="Compatibility option; databases are never replaced by repair.")
     repair.set_defaults(func=command_repair)
+
     return parser
+
 
 
 def normalize_remainder(args: argparse.Namespace) -> None:
@@ -1469,6 +1610,10 @@ def main(argv: list[str] | None = None, *, prog: str = "pm codex") -> int:
     except (ValueError, argparse.ArgumentTypeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    except sqlite3.Error as exc:
+        print(f"error: SQLite operation failed: {exc}", file=sys.stderr)
+        return 2
+
 
 
 if __name__ == "__main__":
