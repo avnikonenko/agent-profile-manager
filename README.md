@@ -42,6 +42,18 @@ pm claude run work                # Or: default / research
 Use `pm codex list` or `pm claude list` to inspect profiles. Repeat the login
 command to sign in again.
 
+## Check usage limits
+
+Open the profile, then enter the built-in command inside its interactive session:
+
+| Launch from your shell | Enter inside the session |
+| --- | --- |
+| `pm codex run work` | [`/status`](https://learn.chatgpt.com/docs/pricing#where-can-i-see-my-current-usage-limits) |
+| `pm claude run work` | [`/usage`](https://code.claude.com/docs/en/costs#using-the-usage-command) |
+
+Replace `work` with `default` or another profile to check that account. These are
+agent commands, not shell commands or `pm` subcommands.
+
 ## History and shortcuts
 
 New profiles share history with `default`. Use `new NAME --isolated` for private
