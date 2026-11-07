@@ -22,7 +22,8 @@ Examples:
 
 Commands: new, list, run, rename, path, doctor, repair, install,
           uninstall, export, import, remove
-Claude also supports login. Use 'pm codex --help' or 'pm claude --help'
+Codex also supports migrate-history; Claude supports login.
+Use 'pm codex --help' or 'pm claude --help'
 for provider-specific options.
 
 Derived from Codex Tools by Miroslav Hruska (MIT); see NOTICE and LICENSE.

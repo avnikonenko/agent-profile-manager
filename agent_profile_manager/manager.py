@@ -1560,7 +1560,16 @@ def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
     repair.add_argument("--force", action="store_true", help="Compatibility option; databases are never replaced by repair.")
     repair.set_defaults(func=command_repair)
 
+    migration = sub.add_parser("migrate-history", help="Prepare legacy SQLite history for shared profiles.")
+    migration.add_argument("name", type=valid_name)
+    migration.add_argument("--output", type=Path, help="New directory for backups and the prepared databases.")
+    migration.add_argument("--apply", action="store_true", help="Apply the prepared migration with all Codex clients stopped.")
+    migration.add_argument("--clients-stopped", action="store_true", help="Confirm that all clients using either home are stopped.")
+    from agent_profile_manager.codex_history import command_migrate
+
+    migration.set_defaults(func=command_migrate)
     return parser
+
 
 
 
