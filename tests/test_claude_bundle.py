@@ -80,6 +80,49 @@ class ClaudeBundleTests(unittest.TestCase):
         self.assertNotIn("dummy-secret-source", self.output.getvalue())
         self.assertEqual((home / "projects").resolve(), Path(imported["conversation_store"]))
 
+    def test_force_import_install_preflight_preserves_existing_login_on_collision(self):
+        self.new_profile()
+        bundle.command_export(self.args)
+        target = self.new_profile("target", credential="dummy-old-login")
+        self.args.name = "target"
+        self.args.force = True
+        self.args.install = True
+        self.args.bin_dir.mkdir()
+        occupied = self.args.bin_dir / "target"
+        occupied.write_text("unrelated command")
+        home = Path(target["home"])
+        before = {name: (home / name).read_bytes() for name in bundle.PROFILE_FILES}
+        with self.assertRaises(ValueError):
+            bundle.command_import(self.args)
+        self.assertEqual({name: (home / name).read_bytes() for name in bundle.PROFILE_FILES}, before)
+        self.assertEqual(occupied.read_text(), "unrelated command")
+
+    def test_new_import_install_preflight_rejects_recursion_before_creating_profile(self):
+        self.new_profile()
+        bundle.command_export(self.args)
+        self.args.name = "target"
+        self.args.install = True
+        self.args.claude_binary = "target"
+        with self.assertRaises(ValueError):
+            bundle.command_import(self.args)
+        self.assertFalse(profiles.profile_dir(self.root, "target").exists())
+
+    def test_force_import_install_preflight_rejects_registered_wrapper(self):
+        self.new_profile()
+        bundle.command_export(self.args)
+        target = self.new_profile("target", credential="dummy-old-login")
+        self.args.name = "target"
+        profiles.command_install(self.args)
+        home = Path(target["home"])
+        before = (home / ".credentials.json").read_bytes()
+        wrapper = self.args.bin_dir / "target"
+        wrapper.unlink()  # Registry collision remains even when the file is absent.
+        self.args.force = True
+        self.args.install = True
+        with self.assertRaises(ValueError):
+            bundle.command_import(self.args)
+        self.assertEqual((home / ".credentials.json").read_bytes(), before)
+
     def test_history_and_memory_are_opt_in(self):
         source = self.new_profile()
         store = Path(source["conversation_store"])

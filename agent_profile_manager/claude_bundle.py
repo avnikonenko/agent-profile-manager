@@ -357,6 +357,12 @@ def command_import(args: argparse.Namespace) -> int:
                 profile = profiles.load_profile(root, name, default)
             else:
                 profile = None
+            install_args = None
+            if args.install:
+                install_args = argparse.Namespace(**vars(args))
+                install_args.name = name
+                install_args.force = False
+                profiles.preflight_install(install_args, profile or {"name": name})
             _stage_archive(archive, stage)
         if profile is None:
             _publish_profile(root, default, name, stage)
@@ -369,8 +375,5 @@ def command_import(args: argparse.Namespace) -> int:
             else:
                 print("Conversations: existing store preserved")
         if args.install:
-            install_args = argparse.Namespace(**vars(args))
-            install_args.name = name
-            install_args.force = False
             return profiles.command_install(install_args)
     return 0
