@@ -281,6 +281,66 @@ class ClaudeProfileTests(unittest.TestCase):
         self.command(profiles.command_remove, uninstall=True)
         self.assertFalse((self.bin / "work").exists())
 
+    def test_default_projects_alias_is_protected_before_wrapper_uninstall(self):
+        profile = self.create()
+        self.command(profiles.command_install)
+        marker = Path(profile["conversation_store"]) / "keep.jsonl"
+        marker.write_text("default history")
+        (self.default / "projects").rmdir()
+        (self.default / "projects").symlink_to(Path(profile["conversation_store"]), target_is_directory=True)
+        for purge in (False, True):
+            with self.subTest(purge=purge), self.assertRaises(ValueError):
+                self.command(profiles.command_remove, purge=purge, remove_store=True, uninstall=True)
+        self.assertEqual(marker.read_text(), "default history")
+        self.assertTrue((self.bin / "work").is_file())
+        self.assertTrue(profiles.profile_file(self.root, "work").is_file())
+
+    def test_default_home_alias_and_parent_are_protected(self):
+        profile = self.create()
+        home = Path(profile["home"])
+        for alias in (home, home / "nested-default"):
+            with self.subTest(alias=alias), self.assertRaises(ValueError):
+                self.command(profiles.command_remove, default_home=alias, purge=True)
+        self.assertTrue(home.is_dir())
+
+    def test_isolated_source_name_does_not_rewrite_private_profiles(self):
+        self.create("isolated")
+        private = self.create("private")
+        shared = self.create("shared", share="isolated")
+        self.command(profiles.command_rename, name="isolated", new_name="source")
+        self.assertEqual(profiles.load_profile(self.root, "private", self.default), private)
+        updated = profiles.load_profile(self.root, "shared", self.default)
+        self.assertEqual(updated["share"], "source")
+        self.assertEqual(updated["sharing_mode"], "shared")
+        self.assertEqual(updated["conversation_store"], shared["conversation_store"])
+        self.command(profiles.command_new, name="private", force=True, isolated=True)
+
+    def test_legacy_sharing_sentinel_uses_store_identity(self):
+        self.create("isolated")
+        private = self.create("private")
+        shared = self.create("shared", share="isolated")
+        for profile in (private, shared):
+            profile.pop("sharing_mode")
+            profiles.save_profile(self.root, profile, self.default)
+        self.assertTrue(profiles.profile_is_isolated(private))
+        self.assertFalse(profiles.profile_is_isolated(shared))
+        self.command(profiles.command_rename, name="isolated", new_name="source")
+        self.assertEqual(profiles.load_profile(self.root, "private", self.default)["share"], "isolated")
+        self.assertEqual(profiles.load_profile(self.root, "shared", self.default)["share"], "source")
+
+    def test_shared_source_named_isolated_cannot_be_forced_private(self):
+        self.create("isolated")
+        shared = self.create("shared", share="isolated")
+        with self.assertRaises(ValueError):
+            self.command(profiles.command_new, name="shared", force=True, isolated=True)
+        self.assertEqual(profiles.load_profile(self.root, "shared", self.default), shared)
+
+    def test_invalid_sharing_mode_is_a_validation_error(self):
+        profile = self.create()
+        for mode in ([], {}, 1, None, "invalid"):
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                profiles.save_profile(self.root, {**profile, "sharing_mode": mode}, self.default)
+
 
 if __name__ == "__main__":
     unittest.main()

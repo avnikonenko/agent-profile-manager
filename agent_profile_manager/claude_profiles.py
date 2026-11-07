@@ -97,6 +97,9 @@ def _validate_profile(root: Path, payload: dict[str, Any], default: Path) -> Non
         raise ValueError("Invalid profile sharing record")
     if share != "isolated":
         valid_name(share)
+    if "sharing_mode" in payload and (not isinstance(payload["sharing_mode"], str)
+                                      or payload["sharing_mode"] not in {"shared", "isolated"}):
+        raise ValueError("Invalid profile sharing mode")
     wrapper = payload.get("wrapper")
     if wrapper is not None:
         _validate_wrapper_record(wrapper)
@@ -160,6 +163,19 @@ def store_from_profile(profile: dict[str, Any]) -> Path:
     return Path(profile["conversation_store"])
 
 
+def profile_is_isolated(profile: dict[str, Any]) -> bool:
+    mode = profile.get("sharing_mode")
+    if mode is not None:
+        if not isinstance(mode, str) or mode not in {"shared", "isolated"}:
+            raise ValueError("Invalid profile sharing mode")
+        return mode == "isolated"
+    # Legacy private homes and stores were allocated the same stable UUID.
+    # A shared source named 'isolated' must not be mistaken for this mode.
+    home, store = home_from_profile(profile), store_from_profile(profile)
+    return (profile.get("share") == "isolated" and home.name == store.name
+            and store.parent == home.parent.parent / "stores")
+
+
 def profile_home(root: Path, name: str, default: Path | None = None) -> Path:
     return home_from_profile(load_profile(root, name, default or Path.home() / ".claude"))
 
@@ -174,7 +190,7 @@ def create_profile(root: Path, name: str, default: Path, share: str | None = Non
     if destination.exists() or destination.is_symlink():
         if force:
             existing = load_profile(root, name, default)
-            if share is not None and existing["share"] != share:
+            if share is not None and (profile_is_isolated(existing) or existing["share"] != share):
                 raise ValueError("--force cannot change an existing profile's sharing")
             return existing
         raise ValueError(f"Profile already exists: {name}")
@@ -202,6 +218,7 @@ def create_profile(root: Path, name: str, default: Path, share: str | None = Non
         (home / "projects").symlink_to(store, target_is_directory=True)
         payload = {"provider": "claude", "name": name, "home": str(home),
                    "conversation_store": str(store), "share": share or "isolated",
+                   "sharing_mode": "shared" if share else "isolated",
                    "created_at": datetime.now(timezone.utc).isoformat()}
         destination.mkdir(mode=0o700)
         save_profile(root, payload, default)
@@ -225,7 +242,7 @@ def discard_new_profile(root: Path, profile: dict[str, Any], default: Path) -> N
         raise ValueError("Cannot discard a registered or shared profile")
     shutil.rmtree(profile_dir(root, profile["name"]))
     shutil.rmtree(home_from_profile(profile))
-    if profile["share"] == "isolated":
+    if profile_is_isolated(profile):
         shutil.rmtree(_managed_path(root, profile["conversation_store"], "stores"))
 
 
@@ -237,7 +254,7 @@ def command_new(args: argparse.Namespace) -> int:
     root, default = _args_paths(args)
     reused = profile_dir(root, args.name).exists()
     if reused and getattr(args, "force", False) and getattr(args, "isolated", False):
-        if load_profile(root, args.name, default)["share"] != "isolated":
+        if not profile_is_isolated(load_profile(root, args.name, default)):
             raise ValueError("--force cannot change an existing profile's sharing")
     share = getattr(args, "share", None)
     if getattr(args, "isolated", False):
@@ -246,7 +263,7 @@ def command_new(args: argparse.Namespace) -> int:
         share = "default"
     profile = create_profile(root, args.name, default, share, getattr(args, "force", False))
     print(f"{'Reusing' if reused else 'Created'} Claude profile {profile['name']}: {profile['home']}")
-    print("History: isolated" if profile["share"] == "isolated"
+    print("History: isolated" if profile_is_isolated(profile)
           else f"History and memory: shared with {profile['share']}")
     if getattr(args, "install", False):
         return command_install(args)
@@ -367,15 +384,22 @@ def _rollback_wrapper(path: Path, published: str, previous: str | None = None) -
         _write_wrapper(path, previous, replace=True)
 
 
-def command_install(args: argparse.Namespace) -> int:
+def preflight_install(args: argparse.Namespace, profile: dict[str, Any]) -> tuple[Path, dict[str, str], str, bool]:
+    """Validate predictable install failures before an import changes login data."""
     root, default = _args_paths(args)
-    profile = load_profile(root, args.name, default)
     if args.name in RESERVED_NAMES:
         raise ValueError("Install wrappers only for managed named profiles")
     custom = getattr(args, "wrapper_name", None)
     command = valid_command_name(custom or args.name)
     binary = getattr(args, "claude_binary", "claude")
     target = args.bin_dir.expanduser().resolve() / command
+    parent = target.parent
+    while not parent.exists():
+        parent = parent.parent
+    if not parent.is_dir():
+        raise ValueError("Wrapper parent is not a directory")
+    if not os.access(parent, os.W_OK | os.X_OK):
+        raise ValueError("Wrapper parent is not writable/searchable")
     record, content = _wrapper_record(args.name, binary, root, default, target, custom is not None)
     existing = profile.get("wrapper")
     if existing and (existing["path"] != str(target) or not getattr(args, "force", False)):
@@ -383,6 +407,14 @@ def command_install(args: argparse.Namespace) -> int:
     occupied = target.exists() or target.is_symlink()
     if occupied and (not existing or not _wrapper_matches(root, default, profile)):
         raise ValueError("Refusing to replace an unrelated or modified wrapper")
+    return target, record, content, occupied
+
+
+def command_install(args: argparse.Namespace) -> int:
+    root, default = _args_paths(args)
+    profile = load_profile(root, args.name, default)
+    target, record, content, occupied = preflight_install(args, profile)
+    existing = profile.get("wrapper")
     original = dict(profile)
     profile["wrapper"] = record
     _write_wrapper(target, content, replace=occupied)
@@ -396,7 +428,7 @@ def command_install(args: argparse.Namespace) -> int:
         profile.clear()
         profile.update(original)
         raise
-    print(f"Installed {command}: {target}")
+    print(f"Installed {record['command']}: {target}")
     return 0
 
 
@@ -436,7 +468,8 @@ def command_rename(args: argparse.Namespace) -> int:
     old_dir, new_dir = profile_dir(root, args.name), profile_dir(root, args.new_name)
     if new_dir.exists() or new_dir.is_symlink():
         raise ValueError("Destination profile already exists")
-    dependents = [other for other in iter_profiles(root, default) if other["share"] == args.name]
+    dependents = [other for other in iter_profiles(root, default)
+                  if not profile_is_isolated(other) and other["share"] == args.name]
     wrapper = profile.get("wrapper")
     target = None
     if wrapper:
@@ -484,6 +517,20 @@ def command_remove(args: argparse.Namespace) -> int:
     if args.name in RESERVED_NAMES:
         raise ValueError("Reserved profiles cannot be removed")
     profile = load_profile(root, args.name, default)
+    home = home_from_profile(profile)
+    directory = profile_dir(root, args.name)
+    store = store_from_profile(profile)
+    remove_store = getattr(args, "remove_store", False)
+    moving = [directory.resolve(), home.resolve()]
+    if remove_store:
+        _managed_path(root, str(store), "stores")
+        moving.append(store.resolve())
+    default_profile = load_profile(root, "default", default)
+    default_paths = [home_from_profile(default_profile).resolve(), store_from_profile(default_profile).resolve()]
+    for path in moving:
+        if any(path == reference or path in reference.parents or reference in path.parents
+               for reference in default_paths):
+            raise ValueError("Refusing to remove data overlapping the default Claude home or projects")
     if any(other["name"] != args.name and other["home"] == profile["home"]
            for other in iter_profiles(root, default)):
         raise ValueError("Profile home is also referenced by another profile")
