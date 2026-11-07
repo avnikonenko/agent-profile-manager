@@ -99,6 +99,8 @@ Wrappers are installed in `~/.local/bin` by default; it must be on `PATH`.
 
 - [Profile operations, sharing, and account transfers](docs/profiles.md)
 - [Security and data compatibility](docs/security.md)
+- [Changelog](CHANGELOG.md)
+- [Versioning and releases](docs/releases.md)
 
 This project contains profile management only. It does not include conversation
 viewers, summaries, relay services, usage reporting, or process termination.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-profile-manager"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Manage multiple local Codex and Claude Code accounts."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,3 +21,6 @@ pm = "agent_profile_manager.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["agent_profile_manager*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "agent_profile_manager.__version__"}
