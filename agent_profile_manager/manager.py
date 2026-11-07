@@ -1139,11 +1139,12 @@ def wrapper_matches_record(path: Path, wrapper: dict[str, Any]) -> bool:
 
 
 def discover_untracked_wrapper(
-    name: str, root: Path, default: Path, bin_dir: Path
+    name: str, root: Path, default: Path, bin_dir: Path, command_name: str | None = None,
 ) -> dict[str, Any] | None:
     """Recognize an older manager wrapper that predates profile metadata."""
     content = wrapper_script(name, "codex", root, default)
-    for command in (default_wrapper_name(name), f"codex-{name}"):
+    commands = (command_name,) if command_name is not None else (default_wrapper_name(name), f"codex-{name}")
+    for command in commands:
         path = bin_dir / command
         if path.is_symlink() or not path.is_file():
             continue
@@ -1160,6 +1161,7 @@ def discover_untracked_wrapper(
             "sha256": wrapper_digest(content),
         }
     return None
+
 
 
 def command_install(args: argparse.Namespace) -> int:
@@ -1213,7 +1215,7 @@ def command_uninstall(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-        target = Path(str(wrapper.get("path", ""))).expanduser().resolve()
+        target = Path(str(wrapper.get("path", ""))).expanduser().absolute()
         if target.exists() and not args.force and not wrapper_matches_record(target, wrapper):
             print(
                 f"error: refusing to remove modified wrapper: {target}",
@@ -1223,12 +1225,13 @@ def command_uninstall(args: argparse.Namespace) -> int:
     else:
         wrapper_name = args.wrapper_name or default_wrapper_name(args.name)
         target = args.bin_dir.expanduser().resolve() / wrapper_name
-        if args.wrapper_name is None:
-            discovered = discover_untracked_wrapper(args.name, root, default, target.parent)
-            if discovered:
-                target = Path(discovered["path"])
-            elif target.exists() or target.is_symlink():
-                raise ValueError(f"refusing to remove an unrecognized wrapper: {target}")
+        discovered = discover_untracked_wrapper(
+            args.name, root, default, target.parent, args.wrapper_name,
+        )
+        if discovered:
+            target = Path(discovered["path"])
+        elif target.exists() or target.is_symlink():
+            raise ValueError(f"refusing to remove an unrecognized wrapper: {target}")
 
     if not target.exists() and not target.is_symlink():
         print(f"Nothing to uninstall: {target}")
@@ -1242,6 +1245,7 @@ def command_uninstall(args: argparse.Namespace) -> int:
         save_profile(root, profile)
     print(f"Removed {target}")
     return 0
+
 
 
 def command_rename(args: argparse.Namespace) -> int:
