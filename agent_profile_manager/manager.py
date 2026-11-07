@@ -1262,6 +1262,12 @@ def command_rename(args: argparse.Namespace) -> int:
     if new_path.exists():
         print(f"error: profile already exists: {new_name}", file=sys.stderr)
         return 2
+    # Moving the home must not relocate another profile's SQLite directory.
+    validate_removal_paths(root, default, profile, remove_store=False)
+    if profile.get("sqlite_home"):
+        registered_sqlite = Path(str(profile["sqlite_home"])).expanduser().resolve()
+        if registered_sqlite == old_path.resolve() or old_path.resolve() in registered_sqlite.parents:
+            raise ValueError("cannot rename a profile with a SQLite home inside its moving profile directory")
 
     wrapper = wrapper_from_profile(profile)
     if wrapper is None:
@@ -1311,31 +1317,127 @@ def command_rename(args: argparse.Namespace) -> int:
         and candidate.get("share") == old_name
     ]
 
-    old_path.rename(new_path)
-    profile["name"] = new_name
-    profile["home"] = str(profile_home(root, new_name))
-    if wrapper and new_wrapper_path and wrapper_content is not None:
-        profile["wrapper"] = {
-            **wrapper,
-            "command": new_wrapper_path.name,
-            "path": str(new_wrapper_path),
-            "sha256": wrapper_digest(wrapper_content),
-        }
-    save_profile(root, profile)
+    # Rollout paths may refer to the old home even though sessions themselves
+    # live in a stable shared store. Prepare normalized index snapshots offline.
+    from agent_profile_manager import codex_history
 
-    for dependent in dependents:
-        dependent["share"] = new_name
-        save_profile(root, dependent)
+    home = home_from_profile(profile)
+    store = store_from_profile(profile)
+    sqlite_home = profile_sqlite_home(profile, root, default, check_legacy=False)
+    sqlite_directories = {home, sqlite_home}
+    if not profile.get("sqlite_home"):
+        sqlite_directories.add(legacy_sqlite_home(profile))
+    indexes = sorted({directory / "state_5.sqlite" for directory in sqlite_directories if (directory / "state_5.sqlite").exists()})
+    backup = None
+    if indexes:
+        codex_history.check_stopped(sorted(sqlite_directories))
+        backup = Path(tempfile.mkdtemp(prefix="rename-", dir=root))
+        for index, database in enumerate(indexes):
+            codex_history.snapshot(database, backup / f"{index}.original.sqlite")
+            codex_history.snapshot(database, backup / f"{index}.prepared.sqlite")
+            codex_history.normalize_rollout_paths(backup / f"{index}.prepared.sqlite", home, store)
+        codex_history.check_stopped(sorted(sqlite_directories))
 
-    if wrapper and old_wrapper_path and new_wrapper_path and wrapper_content is not None:
-        write_wrapper(new_wrapper_path, wrapper_content)
-        if new_wrapper_path != old_wrapper_path:
-            old_wrapper_path.unlink(missing_ok=True)
+    original = dict(profile)
+    dependent_originals = [dict(other) for other in dependents]
+    previous_wrapper = old_wrapper_path.read_text() if old_wrapper_path and old_wrapper_path.exists() else None
+    moved = False
+    published = []
+    try:
+        for index, database in enumerate(indexes):
+            published.append((index, database))
+            codex_history.publish(backup / f"{index}.prepared.sqlite", database)
+        old_path.rename(new_path)
+        moved = True
+        profile["name"] = new_name
+        profile["home"] = str(profile_home(root, new_name))
+        if wrapper and new_wrapper_path and wrapper_content is not None:
+            profile["wrapper"] = {
+                **wrapper,
+                "command": new_wrapper_path.name,
+                "path": str(new_wrapper_path),
+                "sha256": wrapper_digest(wrapper_content),
+            }
+        save_profile(root, profile)
+        for dependent in dependents:
+            dependent["share"] = new_name
+            save_profile(root, dependent)
+        if wrapper and old_wrapper_path and new_wrapper_path and wrapper_content is not None:
+            write_wrapper(new_wrapper_path, wrapper_content)
+            if new_wrapper_path != old_wrapper_path:
+                old_wrapper_path.unlink(missing_ok=True)
+    except Exception as failure:
+        recovery_errors = []
+        try:
+            if moved:
+                new_path.rename(old_path)
+            save_profile(root, original)
+        except Exception:
+            recovery_errors.append("profile metadata/home")
+        for dependent in dependent_originals:
+            try:
+                save_profile(root, dependent)
+            except Exception:
+                recovery_errors.append("dependent " + dependent["name"])
+        for index, database in reversed(published):
+            try:
+                codex_history.publish(backup / f"{index}.original.sqlite", database)
+            except Exception:
+                recovery_errors.append("conversation index")
+        try:
+            if new_wrapper_path and new_wrapper_path != old_wrapper_path:
+                new_wrapper_path.unlink(missing_ok=True)
+            if old_wrapper_path and previous_wrapper is not None:
+                write_wrapper(old_wrapper_path, previous_wrapper)
+        except Exception:
+            recovery_errors.append("wrapper")
+        if recovery_errors:
+            raise ValueError("rename recovery incomplete: " + ", ".join(recovery_errors) + f"; SQLite backups: {backup}") from failure
+        raise
+    if backup:
+        print(f"Index backups: {backup}")
 
     print(f"Renamed profile {old_name} -> {new_name}")
     if wrapper and new_wrapper_path:
         print(f"Wrapper: {new_wrapper_path.name} -> {new_wrapper_path}")
     return 0
+
+
+
+
+def validate_removal_paths(
+    root: Path, default: Path, profile: dict[str, Any], remove_store: bool,
+) -> None:
+    """Authorize owned paths and protect every other profile's live storage."""
+    name = str(profile["name"])
+    directory = profile_dir(root, name)
+    if profiles_dir(root).is_symlink() or directory.is_symlink():
+        raise ValueError("refusing to remove a symlinked profile directory")
+    if directory.resolve().parent != profiles_dir(root).resolve():
+        raise ValueError("profile directory is outside the managed profiles directory")
+    paths = [directory.resolve()]
+    if remove_store:
+        store = store_from_profile(profile)
+        registered_store = Path(str(profile["conversation_store"])).expanduser()
+        if not profile_is_isolated(profile):
+            raise ValueError(f"refusing to remove non-private store: {store}")
+        if (stores_dir(root).is_symlink() or registered_store.is_symlink()
+                or store.parent != stores_dir(root).resolve()):
+            raise ValueError(f"refusing to remove a store outside the managed stores directory: {store}")
+        paths.append(store)
+    default = default.resolve()
+    for path in paths:
+        if path == default or path in default.parents or default in path.parents:
+            raise ValueError("refusing to remove data inside or containing the default Codex home")
+    others = [load_profile(root, "default", default), *iter_managed_profiles(root)]
+    for other in others:
+        if other.get("name") == name:
+            continue
+        references = [home_from_profile(other), store_from_profile(other)]
+        references.append(profile_sqlite_home(other, root, default, check_legacy=False))
+        for path in paths:
+            if any(reference == path or path in reference.parents for reference in references):
+                raise ValueError(f"refusing to remove storage still used by profile {other['name']}: {path}")
 
 
 
@@ -1350,8 +1452,8 @@ def command_remove(args: argparse.Namespace) -> int:
     profile = load_profile(root, name, default)
     profile_path = profile_dir(root, name)
     store = store_from_profile(profile)
-    private_store = profile.get("share") == "isolated"
-    store_used_elsewhere = store_is_used_by_other_profiles(root, store, name)
+    # Validate before touching a wrapper, metadata, or data directory.
+    validate_removal_paths(root, default, profile, args.remove_store)
 
     if args.uninstall:
         uninstall_args = argparse.Namespace(
@@ -1365,20 +1467,6 @@ def command_remove(args: argparse.Namespace) -> int:
         result = command_uninstall(uninstall_args)
         if result:
             return result
-
-    if args.remove_store:
-        if not private_store:
-            print(
-                f"error: refusing to remove non-private store: {store}",
-                file=sys.stderr,
-            )
-            return 2
-        if store_used_elsewhere:
-            print(
-                f"error: refusing to remove store still used by another profile: {store}",
-                file=sys.stderr,
-            )
-            return 2
 
     if args.purge:
         shutil.rmtree(profile_path)
@@ -1394,6 +1482,7 @@ def command_remove(args: argparse.Namespace) -> int:
         trashed_store = move_to_trash(root, store)
         print(f"Moved conversation store to trash: {trashed_store}")
     return 0
+
 
 
 def build_parser(prog: str = "pm codex") -> argparse.ArgumentParser:
